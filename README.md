@@ -49,7 +49,11 @@ Location:
 - MacOS: `~/Library/Application\ Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%/Claude/claude_desktop_config.json`
 
-Configuration:
+### Configuration
+
+<details>
+  <summary>Development/Unpublished Servers Configuration</summary>
+  
 ```json
 {
   "mcpServers": {
@@ -70,6 +74,31 @@ Configuration:
   }
 }
 ```
+
+</details>
+
+<details>
+  <summary>Published Servers Configuration</summary>
+  
+```json
+{
+  "mcpServers": {
+    "mcp-atlassian": {
+      "command": "uvx",
+      "args": [
+        "mcp-atlassian"
+      ],
+      "env": {
+        "CONFLUENCE_CLOUD_URL": "your_confluence_url",
+        "CONFLUENCE_CLOUD_USER": "your_username",
+        "CONFLUENCE_CLOUD_TOKEN": "your_api_token"
+      }
+    }
+  }
+}
+```
+
+</details>
 
 ## Development
 
