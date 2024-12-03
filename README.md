@@ -181,3 +181,14 @@ tail -n 20 -f ~/Library/Logs/Claude/mcp-server-mcp-atlassian.log
 ```
 
 </details>
+
+## Legal & Security
+
+This is not an official Atlassian product. Licensed under MIT - see [LICENSE](LICENSE) file.
+
+### Security
+- Never share API tokens
+- Keep .env files secure and private
+- See [SECURITY.md](SECURITY.md) for best practices
+
+For security issues, please email [security contact].
