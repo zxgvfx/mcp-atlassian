@@ -22,38 +22,38 @@ Model Context Protocol (MCP) server for Atlassian Cloud products (Confluence and
 
 #### Confluence Tools
 
-- **confluence.search**
+- **confluence_search**
   - Search Confluence content using CQL
   - Inputs:
     - `query` (string): CQL query string
     - `limit` (number, optional): Results limit (1-50, default: 10)
 
-- **confluence.get_page**
+- **confluence_get_page**
   - Get content of a specific Confluence page
   - Inputs:
     - `page_id` (string): Confluence page ID
     - `include_metadata` (boolean, optional): Include page metadata (default: true)
 
-- **confluence.get_comments**
+- **confluence_get_comments**
   - Get comments for a specific Confluence page
   - Input: `page_id` (string)
 
 #### Jira Tools
 
-- **jira.get_issue**
+- **jira_get_issue**
   - Get details of a specific Jira issue
   - Inputs:
     - `issue_key` (string): Jira issue key (e.g., 'PROJ-123')
     - `expand` (string, optional): Fields to expand
 
-- **jira.search**
+- **jira_search**
   - Search Jira issues using JQL
   - Inputs:
     - `jql` (string): JQL query string
     - `fields` (string, optional): Comma-separated fields (default: "*all")
     - `limit` (number, optional): Results limit (1-50, default: 10)
 
-- **jira.get_project_issues**
+- **jira_get_project_issues**
   - Get all issues for a specific Jira project
   - Inputs:
     - `project_key` (string): Project key

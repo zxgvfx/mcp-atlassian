@@ -115,7 +115,7 @@ async def list_tools() -> list[Tool]:
     """List available Confluence and Jira tools."""
     return [
         Tool(
-            name="confluence.search",
+            name="confluence_search",
             description="Search Confluence content using CQL",
             inputSchema={
                 "type": "object",
@@ -133,7 +133,7 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="confluence.get_page",
+            name="confluence_get_page",
             description="Get content of a specific Confluence page by ID",
             inputSchema={
                 "type": "object",
@@ -149,7 +149,7 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="confluence.get_comments",
+            name="confluence_get_comments",
             description="Get comments for a specific Confluence page",
             inputSchema={
                 "type": "object",
@@ -158,7 +158,7 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="jira.get_issue",
+            name="jira_get_issue",
             description="Get details of a specific Jira issue",
             inputSchema={
                 "type": "object",
@@ -170,7 +170,7 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="jira.search",
+            name="jira_search",
             description="Search Jira issues using JQL",
             inputSchema={
                 "type": "object",
@@ -189,7 +189,7 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="jira.get_project_issues",
+            name="jira_get_project_issues",
             description="Get all issues for a specific Jira project",
             inputSchema={
                 "type": "object",
@@ -213,7 +213,7 @@ async def list_tools() -> list[Tool]:
 async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
     """Handle tool calls for Confluence and Jira operations."""
     try:
-        if name == "confluence.search":
+        if name == "confluence_search":
             limit = min(int(arguments.get("limit", 10)), 50)
             documents = confluence_fetcher.search(arguments["query"], limit)
             search_results = [
@@ -229,7 +229,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
 
             return [TextContent(type="text", text=json.dumps(search_results, indent=2))]
 
-        elif name == "confluence.get_page":
+        elif name == "confluence_get_page":
             doc = confluence_fetcher.get_page_content(arguments["page_id"])
             include_metadata = arguments.get("include_metadata", True)
 
@@ -240,7 +240,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
 
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
-        elif name == "confluence.get_comments":
+        elif name == "confluence_get_comments":
             comments = confluence_fetcher.get_page_comments(arguments["page_id"])
             formatted_comments = [
                 {
@@ -253,12 +253,12 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
 
             return [TextContent(type="text", text=json.dumps(formatted_comments, indent=2))]
 
-        elif name == "jira.get_issue":
+        elif name == "jira_get_issue":
             doc = jira_fetcher.get_issue(arguments["issue_key"], expand=arguments.get("expand"))
             result = {"content": doc.page_content, "metadata": doc.metadata}
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
-        elif name == "jira.search":
+        elif name == "jira_search":
             limit = min(int(arguments.get("limit", 10)), 50)
             documents = jira_fetcher.search_issues(
                 arguments["jql"], fields=arguments.get("fields", "*all"), limit=limit
@@ -278,7 +278,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
             ]
             return [TextContent(type="text", text=json.dumps(search_results, indent=2))]
 
-        elif name == "jira.get_project_issues":
+        elif name == "jira_get_project_issues":
             limit = min(int(arguments.get("limit", 10)), 50)
             documents = jira_fetcher.get_project_issues(arguments["project_key"], limit=limit)
             project_issues = [
