@@ -2,6 +2,9 @@
 
 Model Context Protocol (MCP) server for Atlassian Cloud products (Confluence and Jira). This integration is designed specifically for Atlassian Cloud instances and does not support Atlassian Server or Data Center deployments.
 
+## Feature Demo
+![Demo](https://github.com/user-attachments/assets/995d96a8-4cf3-4a03-abe1-a9f6aea27ac0)
+
 ## Features
 
 - Search and read Confluence spaces/pages
