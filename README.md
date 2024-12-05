@@ -74,11 +74,11 @@ Model Context Protocol (MCP) server for Atlassian Cloud products (Confluence and
       "command": "uv",
       "args": ["mcp-atlassian"],
       "env": {
-        "CONFLUENCE_URL": "your_confluence_url",
-        "CONFLUENCE_USERNAME": "your_username",
+        "CONFLUENCE_URL": "https://your-domain.atlassian.net/wiki",
+        "CONFLUENCE_USERNAME": "your.email@domain.com",
         "CONFLUENCE_API_TOKEN": "your_api_token",
-        "JIRA_URL": "your_jira_url",
-        "JIRA_USERNAME": "your_username",
+        "JIRA_URL": "https://your-domain.atlassian.net",
+        "JIRA_USERNAME": "your.email@domain.com",
         "JIRA_API_TOKEN": "your_api_token"
       }
     }
