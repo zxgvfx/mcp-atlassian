@@ -67,6 +67,7 @@ Model Context Protocol (MCP) server for Atlassian Cloud products (Confluence and
 1. Get API tokens from: https://id.atlassian.com/manage-profile/security/api-tokens
 
 2. Add to your `claude_desktop_config.json`:
+
 ```json
 {
   "mcpServers": {
@@ -85,6 +86,36 @@ Model Context Protocol (MCP) server for Atlassian Cloud products (Confluence and
   }
 }
 ```
+
+<details>
+<summary>Alternative configuration using <code>uv</code></summary>
+
+```json
+{
+  "mcpServers": {
+    "mcp-atlassian": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/mcp-atlassian",
+        "run",
+        "mcp-atlassian"
+      ],
+      "env": {
+        "CONFLUENCE_URL": "https://your-domain.atlassian.net/wiki",
+        "CONFLUENCE_USERNAME": "your.email@domain.com",
+        "CONFLUENCE_API_TOKEN": "your_api_token",
+        "JIRA_URL": "https://your-domain.atlassian.net",
+        "JIRA_USERNAME": "your.email@domain.com",
+        "JIRA_API_TOKEN": "your_api_token"
+      }
+    }
+  }
+}
+```
+Replace `/path/to/mcp-atlassian` with the actual path where you've cloned the repository.
+</details>
+
 
 ## Security
 
