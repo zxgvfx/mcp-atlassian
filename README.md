@@ -239,6 +239,8 @@ To integrate the MCP server with Cursor IDE:
    docker build -t mcp/atlassian .
    ```
 
+![image](https://github.com/user-attachments/assets/fa3728fe-ab04-4a60-a8b0-5aae1be5fed5)
+
 2. Configure the server:
    - Open Cursor Settings
    - Navigate to `Features` > `MCP Servers`
