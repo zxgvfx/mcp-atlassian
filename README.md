@@ -244,23 +244,18 @@ JIRA_API_TOKEN=your_api_token
 
 To integrate the MCP server with Cursor IDE:
 
-1. Install mcp-atlassian using uvx:
-   ```bash
-   uvx mcp-atlassian
-   ```
-
 ![image](https://github.com/user-attachments/assets/dee83445-c694-4b2e-8e47-7c280f806964)
 
-2. Configure the server:
-   - Open Cursor Settings
-   - Navigate to `Features` > `MCP Servers`
-   - Click `Add new MCP server`
-   - Enter this configuration:
-     ```yaml
-     name: mcp-atlassian
-     type: command
-     command: uvx mcp-atlassian --confluence-url=https://your-domain.atlassian.net/wiki --confluence-username=your.email@domain.com --confluence-token=your_api_token --jira-url=https://your-domain.atlassian.net --jira-username=your.email@domain.com --jira-token=your_api_token
-     ```
+Configure the server:
+- Open Cursor Settings
+- Navigate to `Features` > `MCP Servers`
+- Click `Add new MCP server`
+- Enter this configuration:
+  ```yaml
+  name: mcp-atlassian
+  type: command
+  command: uvx mcp-atlassian --confluence-url=https://your-domain.atlassian.net/wiki --confluence-username=your.email@domain.com --confluence-token=your_api_token --jira-url=https://your-domain.atlassian.net --jira-username=your.email@domain.com --jira-token=your_api_token
+  ```
 
 ## Debugging
 
