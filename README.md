@@ -249,6 +249,8 @@ To integrate the MCP server with Cursor IDE:
    uvx mcp-atlassian
    ```
 
+![image](https://github.com/user-attachments/assets/dee83445-c694-4b2e-8e47-7c280f806964)
+
 2. Configure the server:
    - Open Cursor Settings
    - Navigate to `Features` > `MCP Servers`
