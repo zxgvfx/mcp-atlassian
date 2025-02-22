@@ -92,6 +92,11 @@ Model Context Protocol (MCP) server for Atlassian Cloud products (Confluence and
 
 ### Using uv (recommended)
 
+On macOS:
+```bash
+brew install uv
+```
+
 When using [`uv`](https://docs.astral.sh/uv/), use [`uvx`](https://docs.astral.sh/uv/guides/tools/) to directly run *mcp-atlassian*.
 
 ```bash
