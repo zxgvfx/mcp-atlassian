@@ -371,7 +371,7 @@ Configure in Claude Desktop:
       "args": [
         "--directory", "/path/to/your/mcp-atlassian",
         "run", "mcp-atlassian",
-        "--confluence-url=https://your-domain.atlassian.net",
+        "--confluence-url=https://your-domain.atlassian.net/wiki",
         "--confluence-username=your.email@domain.com",
         "--confluence-token=your_api_token",
         "--jira-url=https://your-domain.atlassian.net",
