@@ -1,15 +1,11 @@
 # MCP Atlassian
 
-[![smithery badge](https://smithery.ai/badge/mcp-atlassian)](https://smithery.ai/server/mcp-atlassian)
-
 Model Context Protocol (MCP) server for Atlassian products (Confluence and Jira). This integration supports both Atlassian Cloud and Jira Server/Data Center deployments.
-
-<a href="https://glama.ai/mcp/servers/kc33m1kh5m"><img width="380" height="200" src="https://glama.ai/mcp/servers/kc33m1kh5m/badge" alt="Atlassian MCP server" /></a>
 
 ### Feature Demo
 ![Demo](https://github.com/user-attachments/assets/995d96a8-4cf3-4a03-abe1-a9f6aea27ac0)
 
-### Server/Data Center Compatibility
+### Compatibility
 
 | Product | Deployment Type | Support Status |
 |---------|----------------|----------------|
@@ -17,153 +13,6 @@ Model Context Protocol (MCP) server for Atlassian products (Confluence and Jira)
 | **Confluence** | Server/Data Center | ❌ Not yet supported |
 | **Jira** | Cloud | ✅ Fully supported |
 | **Jira** | Server/Data Center | ✅ Supported (version 8.14+) |
-
-### Resources
-
-> **Note:** The MCP server filters resources to only show Confluence spaces and Jira projects that the user is actively interacting with, based on their contributions and assignments. This makes the integration more efficient and focused on relevant content.
-
-- `confluence://{space_key}`: Access Confluence spaces
-- `jira://{project_key}`: Access Jira projects
-
-### Tools
-
-#### Confluence Tools
-
-1. `confluence_search`
-   - Search Confluence content using CQL
-   - Inputs:
-     - `query` (string): CQL query string
-     - `limit` (number, optional): Results limit (1-50, default: 10)
-   - Returns: Array of search results with page_id, title, space, url, last_modified, type, and excerpt
-
-2. `confluence_get_page`
-   - Get content of a specific Confluence page
-   - Inputs:
-     - `page_id` (string): Confluence page ID
-     - `include_metadata` (boolean, optional): Include page metadata (default: true)
-   - Returns: Page content and optional metadata
-
-3. `confluence_get_comments`
-   - Get comments for a specific Confluence page
-   - Input:
-     - `page_id` (string): Confluence page ID
-   - Returns: Array of comments with author, creation date, and content
-
-4. `confluence_create_page`
-   - Create a new Confluence page
-   - Inputs:
-     - `space_key` (string): The key of the space to create the page in
-     - `title` (string): The title of the page
-     - `content` (string): The content of the page in Markdown format
-     - `parent_id` (string, optional): Optional parent page ID
-   - Returns: Created page details with metadata
-   - Note: Uses markdown-to-confluence library for proper Confluence storage format conversion
-
-5. `confluence_update_page`
-   - Update an existing Confluence page
-   - Inputs:
-     - `page_id` (string): The ID of the page to update
-     - `title` (string): The new title of the page
-     - `content` (string): The new content of the page in Markdown format
-     - `minor_edit` (boolean, optional): Whether this is a minor edit (default: false)
-     - `version_comment` (string, optional): Optional comment for this version (default: "")
-   - Returns: Updated page details with metadata
-   - Note: Uses markdown-to-confluence library for proper Confluence storage format conversion
-
-#### Jira Tools
-
-1. `jira_get_issue`
-   - Get details of a specific Jira issue
-   - Inputs:
-     - `issue_key` (string): Jira issue key (e.g., 'PROJ-123')
-     - `expand` (string, optional): Fields to expand
-     - `comment_limit` (integer, optional): Maximum number of comments to include (0 or null for no comments)
-   - Returns: Issue details including content and metadata
-
-2. `jira_search`
-   - Search Jira issues using JQL
-   - Inputs:
-     - `jql` (string): JQL query string
-     - `fields` (string, optional): Comma-separated fields (default: "*all")
-     - `limit` (number, optional): Results limit (1-50, default: 10)
-   - Returns: Array of matching issues with metadata
-
-3. `jira_get_project_issues`
-   - Get all issues for a specific Jira project
-   - Inputs:
-     - `project_key` (string): Project key
-     - `limit` (number, optional): Results limit (1-50, default: 10)
-   - Returns: Array of project issues with metadata
-
-4. `jira_create_issue`
-   - Create a new issue in Jira
-   - Inputs:
-     - `project_key` (string): The JIRA project key (e.g. 'PROJ')
-     - `summary` (string): Summary/title of the issue
-     - `issue_type` (string): Issue type (e.g. 'Task', 'Bug', 'Story')
-     - `description` (string, optional): Issue description
-     - `additional_fields` (string, optional): JSON string of additional fields
-   - Returns: Created issue details with metadata
-
-5. `jira_update_issue`
-   - Update an existing Jira issue
-   - Inputs:
-     - `issue_key` (string): Jira issue key
-     - `fields` (string): JSON object of fields to update
-     - `additional_fields` (string, optional): JSON string of additional fields
-   - Returns: Updated issue details with metadata
-
-6. `jira_delete_issue`
-   - Delete an existing Jira issue
-   - Inputs:
-     - `issue_key` (string): Jira issue key (e.g. PROJ-123)
-   - Returns: Success confirmation message
-
-7. `jira_get_transitions`
-   - Get available status transitions for a Jira issue
-   - Inputs:
-     - `issue_key` (string): Jira issue key (e.g. 'PROJ-123')
-   - Returns: Array of available transitions with ID, name, and target status information
-
-8. `jira_transition_issue`
-   - Transition a Jira issue to a new status
-   - Inputs:
-     - `issue_key` (string): Jira issue key (e.g., 'PROJ-123')
-     - `transition_id` (string): ID of the transition to perform (get this from jira_get_transitions)
-     - `fields` (string, optional): JSON string of fields to update during the transition
-     - `comment` (string, optional): Comment to add during the transition
-   - Returns: Updated issue details including the new status
-
-9. `jira_add_worklog`
-   - Add a worklog entry to a Jira issue
-   - Inputs:
-     - `issue_key` (string): Jira issue key (e.g., 'PROJ-123')
-     - `time_spent` (string): Time spent in Jira format (e.g., '1h 30m', '1d', '30m')
-     - `comment` (string, optional): Optional comment for the worklog in Markdown format
-     - `started` (string, optional): Optional start time in ISO format (e.g. '2023-08-01T12:00:00.000+0000')
-     - `original_estimate` (string, optional): Optional original estimate in Jira format (e.g., '1h 30m', '1d')
-     - `remaining_estimate` (string, optional): Optional remaining estimate in Jira format (e.g., '1h', '30m')
-   - Returns: Created worklog details with information about estimate updates
-
-10. `jira_get_worklog`
-    - Get worklog entries for a Jira issue
-    - Inputs:
-      - `issue_key` (string): Jira issue key (e.g., 'PROJ-123')
-    - Returns: Array of worklog entries with author, time spent, comments, and dates
-
-11. `jira_link_to_epic`
-    - Link an issue to an Epic
-    - Inputs:
-      - `issue_key` (string): Jira issue key to link (e.g. 'PROJ-123')
-      - `epic_key` (string): Epic issue key to link to (e.g. 'PROJ-456')
-    - Returns: Linked issue details with confirmation message
-
-12. `jira_get_epic_issues`
-    - Get all issues linked to a specific Epic
-    - Inputs:
-      - `epic_key` (string): Epic issue key (e.g. 'PROJ-456')
-      - `limit` (number, optional): Results limit (1-50, default: 10)
-    - Returns: Array of issues linked to the Epic with metadata
 
 ## Installation
 
@@ -391,6 +240,35 @@ Configure in Claude Desktop:
 }
 ```
 
+## Resources
+
+> **Note:** The MCP server filters resources to only show Confluence spaces and Jira projects that the user is actively interacting with, based on their contributions and assignments.
+
+- `confluence://{space_key}`: Access Confluence spaces
+- `jira://{project_key}`: Access Jira projects
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `confluence_search` | Search Confluence content using CQL |
+| `confluence_get_page` | Get content of a specific Confluence page |
+| `confluence_get_comments` | Get comments for a specific Confluence page |
+| `confluence_create_page` | Create a new Confluence page |
+| `confluence_update_page` | Update an existing Confluence page |
+| `jira_get_issue` | Get details of a specific Jira issue |
+| `jira_search` | Search Jira issues using JQL |
+| `jira_get_project_issues` | Get all issues for a specific Jira project |
+| `jira_create_issue` | Create a new issue in Jira |
+| `jira_update_issue` | Update an existing Jira issue |
+| `jira_delete_issue` | Delete an existing Jira issue |
+| `jira_get_transitions` | Get available status transitions for a Jira issue |
+| `jira_transition_issue` | Transition a Jira issue to a new status |
+| `jira_add_worklog` | Add a worklog entry to a Jira issue |
+| `jira_get_worklog` | Get worklog entries for a Jira issue |
+| `jira_link_to_epic` | Link an issue to an Epic |
+| `jira_get_epic_issues` | Get all issues linked to a specific Epic |
+
 ## Debugging
 
 You can use the MCP inspector to debug the server:
@@ -409,14 +287,6 @@ View logs with:
 ```bash
 tail -n 20 -f ~/Library/Logs/Claude/mcp*.log
 ```
-
-## Development
-
-For local development testing:
-
-1. Use the MCP inspector (see [Debugging](#debugging))
-2. Test with Claude Desktop or Cursor IDE using the configuration above
-
 ## Build
 
 Docker build:
