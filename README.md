@@ -186,7 +186,7 @@ The MCP Atlassian integration supports using either Confluence, Jira, or both se
 
 ### Authentication
 
-#### For Atlassian Cloud
+#### For Atlassian Cloud (Confluence and Jira Cloud)
 
 1. Get API tokens from: https://id.atlassian.com/manage-profile/security/api-tokens
 
@@ -200,14 +200,6 @@ The MCP Atlassian integration supports using either Confluence, Jira, or both se
    - Give your token a meaningful name (e.g., "MCP Integration")
    - Set an expiry date (or choose "Never" if permitted by your organization)
    - Copy the generated token immediately (you won't be able to see it again)
-
-   > **Important Notes:**
-   > - PATs inherit your existing Jira permissions - no separate permission configuration is needed during creation
-   > - Ensure your account has the necessary project access before creating the token
-   > - In Data Center, administrators can view/revoke all PATs via **System → Administering personal access tokens**
-   > - By default, users are limited to 10 active tokens
-   > - The implementation uses Bearer token authentication (`Authorization: Bearer <token>`)
-   > - Personal Access Tokens were introduced in Jira Server/Data Center 8.14
 
 ### Usage with Claude Desktop
 
