@@ -11,13 +11,12 @@ Model Context Protocol (MCP) server for Atlassian products (Confluence and Jira)
 
 ### Server/Data Center Compatibility
 
-This MCP server supports:
-
-- **Atlassian Cloud**: Fully supported for both Confluence and Jira
-- **Jira Server/Data Center**: Supported for on-premise Jira installations (version 8.14+)
-- **Confluence Server/Data Center**: Not yet supported
-
-> **Note for On-Premise Users:** When using with Jira Server/Data Center, you'll need to generate a Personal Access Token instead of using username/API token authentication. See the [Authentication](#authentication) section for details.
+| Product | Deployment Type | Support Status |
+|---------|----------------|----------------|
+| **Confluence** | Cloud | ✅ Fully supported |
+| **Confluence** | Server/Data Center | ❌ Not yet supported |
+| **Jira** | Cloud | ✅ Fully supported |
+| **Jira** | Server/Data Center | ✅ Supported (version 8.14+) |
 
 ### Resources
 
