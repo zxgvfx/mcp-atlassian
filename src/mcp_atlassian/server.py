@@ -2,7 +2,7 @@ import json
 import logging
 import os
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Dict
 
 from mcp.server import Server
 from mcp.types import Resource, TextContent, Tool
@@ -13,7 +13,12 @@ from .jira import JiraFetcher
 from .preprocessing import markdown_to_confluence_storage
 
 # Configure logging
-logging.basicConfig(level=logging.WARNING)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    filename="mcp_atlassian_debug.log",
+    filemode="a",
+)
 logger = logging.getLogger("mcp-atlassian")
 logging.getLogger("mcp.server.lowlevel.server").setLevel(logging.INFO)
 
@@ -325,7 +330,7 @@ async def list_tools() -> list[Tool]:
             [
                 Tool(
                     name="jira_get_issue",
-                    description="Get details of a specific Jira issue including its Epic links",
+                    description="Get details of a specific Jira issue including its Epic links and relationship information",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -432,7 +437,7 @@ async def list_tools() -> list[Tool]:
                             "additional_fields": {
                                 "type": "string",
                                 "description": "Optional JSON string of additional fields to set. Examples:\n"
-                                '- Link to Epic: {"parent": {"key": "PROJ-123"}}\n'
+                                '- Link to Epic: {"parent": {"key": "PROJ-123"}} - For linking to an Epic after creation, prefer using the jira_link_to_epic tool instead\n'
                                 '- Set priority: {"priority": {"name": "High"}} or {"priority": null} for no priority (common values: High, Medium, Low, None)\n'
                                 '- Add labels: {"labels": ["label1", "label2"]}\n'
                                 '- Set due date: {"duedate": "2023-12-31"}\n'
@@ -456,11 +461,11 @@ async def list_tools() -> list[Tool]:
                             "fields": {
                                 "type": "string",
                                 "description": "A valid JSON object of fields to update. Examples:\n"
-                                '- Add to Epic: {"parent": {"key": "PROJ-456"}}\n'
+                                '- Add to Epic: {"parent": {"key": "PROJ-456"}} - Prefer using the dedicated jira_link_to_epic tool instead\n'
                                 '- Change assignee: {"assignee": "user@email.com"} or {"assignee": null} to unassign\n'
                                 '- Update summary: {"summary": "New title"}\n'
                                 '- Update description: {"description": "New description"}\n'
-                                "- Change status: requires transition IDs - use jira_get_issue first to see available statuses\n"
+                                "- Change status: requires transition IDs - use jira_get_transitions and jira_transition_issue instead\n"
                                 '- Add labels: {"labels": ["label1", "label2"]}\n'
                                 '- Set priority: {"priority": {"name": "High"}} or {"priority": null} for no priority (common values: High, Medium, Low, None)\n'
                                 '- Update custom fields: {"customfield_10XXX": "value"}',
@@ -500,10 +505,90 @@ async def list_tools() -> list[Tool]:
                             },
                             "comment": {
                                 "type": "string",
-                                "description": "Comment text to add",
+                                "description": "Comment text in Markdown format",
                             },
                         },
                         "required": ["issue_key", "comment"],
+                    },
+                ),
+                Tool(
+                    name="jira_link_to_epic",
+                    description="Link an existing issue to an epic",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "issue_key": {
+                                "type": "string",
+                                "description": "The key of the issue to link (e.g., 'PROJ-123')",
+                            },
+                            "epic_key": {
+                                "type": "string",
+                                "description": "The key of the epic to link to (e.g., 'PROJ-456')",
+                            },
+                        },
+                        "required": ["issue_key", "epic_key"],
+                    },
+                ),
+                Tool(
+                    name="jira_get_epic_issues",
+                    description="Get all issues linked to a specific epic",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "epic_key": {
+                                "type": "string",
+                                "description": "The key of the epic (e.g., 'PROJ-123')",
+                            },
+                            "limit": {
+                                "type": "number",
+                                "description": "Maximum number of issues to return (1-50)",
+                                "default": 10,
+                                "minimum": 1,
+                                "maximum": 50,
+                            },
+                        },
+                        "required": ["epic_key"],
+                    },
+                ),
+                Tool(
+                    name="jira_get_transitions",
+                    description="Get available status transitions for a Jira issue",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "issue_key": {
+                                "type": "string",
+                                "description": "Jira issue key (e.g., 'PROJ-123')",
+                            },
+                        },
+                        "required": ["issue_key"],
+                    },
+                ),
+                Tool(
+                    name="jira_transition_issue",
+                    description="Transition a Jira issue to a new status",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "issue_key": {
+                                "type": "string",
+                                "description": "Jira issue key (e.g., 'PROJ-123')",
+                            },
+                            "transition_id": {
+                                "type": "string",
+                                "description": "ID of the transition to perform (get this from jira_get_transitions)",
+                            },
+                            "fields": {
+                                "type": "string",
+                                "description": "JSON string of fields to update during the transition (optional)",
+                                "default": "{}",
+                            },
+                            "comment": {
+                                "type": "string",
+                                "description": "Comment to add during the transition (optional)",
+                            },
+                        },
+                        "required": ["issue_key", "transition_id"],
                     },
                 ),
             ]
@@ -701,6 +786,186 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
         elif name == "jira_add_comment":
             comment = jira_fetcher.add_comment(arguments["issue_key"], arguments["comment"])
             return [TextContent(type="text", text=json.dumps(comment, indent=2))]
+
+        elif name == "jira_link_to_epic":
+            issue_key = arguments["issue_key"]
+            epic_key = arguments["epic_key"]
+            linked_issue = jira_fetcher.link_issue_to_epic(issue_key, epic_key)
+            result = {
+                "message": f"Issue {issue_key} has been linked to epic {epic_key}.",
+                "issue": {
+                    "key": linked_issue.metadata["key"],
+                    "title": linked_issue.metadata["title"],
+                    "type": linked_issue.metadata["type"],
+                    "status": linked_issue.metadata["status"],
+                    "link": linked_issue.metadata["link"],
+                },
+            }
+            return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+        elif name == "jira_get_epic_issues":
+            epic_key = arguments["epic_key"]
+            limit = min(int(arguments.get("limit", 10)), 50)
+            documents = jira_fetcher.get_epic_issues(epic_key, limit=limit)
+            epic_issues = [
+                {
+                    "key": doc.metadata["key"],
+                    "title": doc.metadata["title"],
+                    "type": doc.metadata["type"],
+                    "status": doc.metadata["status"],
+                    "created_date": doc.metadata["created_date"],
+                    "priority": doc.metadata.get("priority", "None"),
+                    "link": doc.metadata["link"],
+                }
+                for doc in documents
+            ]
+            return [TextContent(type="text", text=json.dumps(epic_issues, indent=2))]
+
+        elif name == "jira_get_transitions":
+            issue_key = arguments["issue_key"]
+            transitions = jira_fetcher.get_available_transitions(issue_key)
+            transitions_result: Dict[str, Any] = {"transitions": transitions}
+            return [TextContent(type="text", text=json.dumps(transitions_result, indent=2))]
+
+        elif name == "jira_transition_issue":
+            import base64
+
+            import httpx
+
+            issue_key = arguments["issue_key"]
+            transition_id = arguments["transition_id"]
+
+            # Convert transition_id to string if it's not already
+            if not isinstance(transition_id, str):
+                transition_id = str(transition_id)
+
+            # Get Jira API credentials from environment/config
+            jira_url = jira_fetcher.config.url.rstrip("/")
+            username = jira_fetcher.config.username
+            api_token = jira_fetcher.config.api_token
+
+            # Construct minimal transition payload
+            payload = {"transition": {"id": transition_id}}
+
+            # Add fields if provided
+            if "fields" in arguments:
+                try:
+                    fields = json.loads(arguments.get("fields", "{}"))
+                    if fields and isinstance(fields, dict):
+                        payload["fields"] = fields
+                except Exception as e:
+                    return [
+                        TextContent(
+                            type="text",
+                            text=json.dumps({"error": f"Invalid fields format: {str(e)}", "status": "error"}, indent=2),
+                        )
+                    ]
+
+            # Add comment if provided
+            if "comment" in arguments and arguments["comment"]:
+                comment = arguments["comment"]
+                if not isinstance(comment, str):
+                    comment = str(comment)
+
+                payload["update"] = {"comment": [{"add": {"body": comment}}]}
+
+            # Create auth header
+            auth_str = f"{username}:{api_token}"
+            auth_bytes = auth_str.encode("ascii")
+            auth_b64 = base64.b64encode(auth_bytes).decode("ascii")
+
+            # Prepare headers
+            headers = {
+                "Authorization": f"Basic {auth_b64}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+
+            # Log entire request for debugging
+            logger.info(f"Sending transition request to {jira_url}/rest/api/2/issue/{issue_key}/transitions")
+            logger.info(f"Headers: {headers}")
+            logger.info(f"Payload: {payload}")
+
+            try:
+                # Make direct HTTP request
+                transition_url = f"{jira_url}/rest/api/2/issue/{issue_key}/transitions"
+                response = httpx.post(transition_url, json=payload, headers=headers, timeout=30.0)
+
+                # Check response
+                if response.status_code >= 400:
+                    return [
+                        TextContent(
+                            type="text",
+                            text=json.dumps(
+                                {
+                                    "error": f"Jira API error: {response.status_code} - {response.text}",
+                                    "status": "error",
+                                },
+                                indent=2,
+                            ),
+                        )
+                    ]
+
+                # Now fetch the updated issue - also using direct HTTP
+                issue_url = f"{jira_url}/rest/api/2/issue/{issue_key}"
+                issue_response = httpx.get(issue_url, headers=headers, timeout=30.0)
+
+                if issue_response.status_code >= 400:
+                    return [
+                        TextContent(
+                            type="text",
+                            text=json.dumps(
+                                {
+                                    "error": f"Failed to fetch updated issue: {issue_response.status_code} - {issue_response.text}",
+                                    "status": "error",
+                                },
+                                indent=2,
+                            ),
+                        )
+                    ]
+
+                # Parse and return issue data
+                issue_data = issue_response.json()
+
+                # Extract essential issue information
+                status = issue_data["fields"]["status"]["name"]
+                summary = issue_data["fields"].get("summary", "")
+                issue_type = issue_data["fields"]["issuetype"]["name"]
+
+                # Clean and process description text if available
+                description = ""
+                if issue_data["fields"].get("description"):
+                    description = jira_fetcher.preprocessor.clean_jira_text(issue_data["fields"]["description"])
+
+                result = {
+                    "message": f"Successfully transitioned issue {issue_key} to {status}",
+                    "issue": {
+                        "key": issue_key,
+                        "title": summary,
+                        "type": issue_type,
+                        "status": status,
+                        "description": description,
+                    },
+                }
+
+                return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+            except Exception as e:
+                error_message = str(e)
+                logger.error(f"Exception in direct transition API call: {error_message}")
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {
+                                "error": f"Network or API error: {error_message}",
+                                "status": "error",
+                                "details": f"Full error: {repr(e)}",
+                            },
+                            indent=2,
+                        ),
+                    )
+                ]
 
         raise ValueError(f"Unknown tool: {name}")
 

@@ -1,5 +1,32 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Dynamic Jira field discovery for Epic-related fields
+- Enhanced Epic linking with support for different Jira configurations
+- Improved Epic issue retrieval using discovered field IDs
+- Added specialized Epic field handling when creating Epic issues
+- Added proper Jira status transition support with workflow validation
+- New tools: jira_get_transitions and jira_transition_issue
+- Comprehensive Markdown to Jira markup conversion with support for:
+  - Headers (# h1, ## h2, etc.)
+  - Formatting (bold with ** or __, italic with * or _)
+  - Code blocks with language support (```language)
+  - Inline code with backticks
+  - Ordered and unordered lists
+  - Links, blockquotes, and horizontal rules
+
+### Fixed
+- Jira comments now properly convert Markdown syntax to Jira markup format
+- This ensures that formatted text (headers, lists, bold, italic, code blocks, etc.) appears correctly in Jira
+- Fixed status updates in Jira to respect workflow rules by using transitions
+- Added Markdown to Jira markup conversion for issue descriptions in create_issue and update_issue methods
+- Fixed literal display of formatting characters (e.g., asterisks) in issue descriptions
+- Improved error handling in transition_issue with detailed logging and better error messages
+- Implemented direct HTTP approach for issue transitions to ensure compatibility with various Jira configurations
+- Enhanced numbered list handling to properly render consecutive items (1., 2., 3., etc.)
+
 ## [0.1.14] - 2025-03-05
 
 ### Fixed
@@ -74,3 +101,5 @@
 - Aligned comment metadata keys in Confluence comments endpoint
 - Fixed handling of nested structure in Confluence spaces response
 - Updated README.md with improved documentation
+
+## [0.1.0] - 2024-12-04
