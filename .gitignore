@@ -61,8 +61,13 @@ local/
 # Pytest
 .pytest_cache/
 .coverage/
+.coverage
 
 # Pre-commit
 .pre-commit-config.yaml.cache
 
+# debug
 playground/
+
+# rules
+CLAUDE.md
