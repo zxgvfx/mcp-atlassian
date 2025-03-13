@@ -16,10 +16,12 @@ def test_init_with_basic_auth():
         api_token="test_token",
     )
 
-    # Mock the Confluence class and TextPreprocessor
+    # Mock the Confluence class and ConfluencePreprocessor
     with (
         patch("mcp_atlassian.confluence.client.Confluence") as mock_confluence,
-        patch("mcp_atlassian.preprocessing.TextPreprocessor") as mock_preprocessor,
+        patch(
+            "mcp_atlassian.preprocessing.confluence.ConfluencePreprocessor"
+        ) as mock_preprocessor,
     ):
         # Act
         client = ConfluenceClient(config=config)
@@ -46,10 +48,12 @@ def test_init_with_token_auth():
         ssl_verify=False,
     )
 
-    # Mock the Confluence class and TextPreprocessor
+    # Mock the Confluence class and ConfluencePreprocessor
     with (
         patch("mcp_atlassian.confluence.client.Confluence") as mock_confluence,
-        patch("mcp_atlassian.preprocessing.TextPreprocessor") as mock_preprocessor,
+        patch(
+            "mcp_atlassian.preprocessing.confluence.ConfluencePreprocessor"
+        ) as mock_preprocessor,
     ):
         # Act
         client = ConfluenceClient(config=config)
@@ -74,7 +78,7 @@ def test_init_from_env():
             "mcp_atlassian.confluence.config.ConfluenceConfig.from_env"
         ) as mock_from_env,
         patch("mcp_atlassian.confluence.client.Confluence") as mock_confluence,
-        patch("mcp_atlassian.preprocessing.TextPreprocessor"),
+        patch("mcp_atlassian.preprocessing.confluence.ConfluencePreprocessor"),
     ):
         mock_config = MagicMock()
         mock_from_env.return_value = mock_config
@@ -94,7 +98,7 @@ def test_process_html_content():
         patch("mcp_atlassian.confluence.client.ConfluenceConfig.from_env"),
         patch("mcp_atlassian.confluence.client.Confluence"),
         patch(
-            "mcp_atlassian.preprocessing.TextPreprocessor"
+            "mcp_atlassian.preprocessing.confluence.ConfluencePreprocessor"
         ) as mock_preprocessor_class,
     ):
         mock_preprocessor = mock_preprocessor_class.return_value
