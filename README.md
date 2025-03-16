@@ -67,19 +67,22 @@ The integration supports using either Confluence, Jira, or both services. You on
 
 #### Configuration Variables
 
-| Setting | Environment Variable | CLI Argument | Description |
-|---------|-------------------|--------------|-------------|
-| Confluence URL | `CONFLUENCE_URL` | `--confluence-url` | Your Confluence URL (e.g., `https://your-domain.atlassian.net/wiki` or `https://confluence.company.com`) |
-| Confluence Email | `CONFLUENCE_USERNAME` | `--confluence-username` | Email for Confluence Cloud |
-| Confluence API Token | `CONFLUENCE_API_TOKEN` | `--confluence-token` | API token for Confluence Cloud |
-| Confluence PAT | `CONFLUENCE_PERSONAL_TOKEN` | `--confluence-personal-token` | Personal Access Token for Server/DC |
-| Jira URL | `JIRA_URL` | `--jira-url` | Your Jira URL (e.g., `https://your-domain.atlassian.net` or `https://jira.company.com`) |
-| Jira Email | `JIRA_USERNAME` | `--jira-username` | Email for Jira Cloud |
-| Jira API Token | `JIRA_API_TOKEN` | `--jira-token` | API token for Jira Cloud |
-| Jira PAT | `JIRA_PERSONAL_TOKEN` | `--jira-personal-token` | Personal Access Token for Server/DC |
-| SSL Verification | `*_SSL_VERIFY` | `--[no-]*-ssl-verify` | SSL verification for Server/DC (optional) |
-| Transport | - | `--transport TYPE` | Transport type (stdio,sse) |
-| Port | - | `--port INTEGER` | Port for SSE transport |
+| Setting | Environment Variable | CLI Argument | Cloud | Server/DC |
+|---------|-------------------|--------------|:-----:|:---------:|
+| **Confluence** |
+| URL | `CONFLUENCE_URL` | `--confluence-url` | O | O |
+| Email | `CONFLUENCE_USERNAME` | `--confluence-username` | O | X |
+| API Token | `CONFLUENCE_API_TOKEN` | `--confluence-token` | O | X |
+| PAT | `CONFLUENCE_PERSONAL_TOKEN` | `--confluence-personal-token` | X | O |
+| **Jira** |
+| URL | `JIRA_URL` | `--jira-url` | O | O |
+| Email | `JIRA_USERNAME` | `--jira-username` | O | X |
+| API Token | `JIRA_API_TOKEN` | `--jira-token` | O | X |
+| PAT | `JIRA_PERSONAL_TOKEN` | `--jira-personal-token` | X | O |
+| **Common** |
+| SSL Verify | `*_SSL_VERIFY` | `--[no-]*-ssl-verify` | X | Optional |
+| Transport | - | `--transport TYPE` | Optional | Optional |
+| Port | - | `--port INTEGER` | Required for SSE | Required for SSE |
 
 #### Quick Start Examples
 
