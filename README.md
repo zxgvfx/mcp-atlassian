@@ -67,6 +67,16 @@ The integration supports using either Confluence, Jira, or both services. You on
 
 #### Configuration Variables
 
+**Note:** For all configuration methods, include only the environment variables needed for your services:
+- For Confluence Cloud: Include `CONFLUENCE_URL`, `CONFLUENCE_USERNAME`, and `CONFLUENCE_API_TOKEN`
+- For Confluence Server/Data Center: Include `CONFLUENCE_URL` and `CONFLUENCE_PERSONAL_TOKEN`
+- For Jira Cloud: Include `JIRA_URL`, `JIRA_USERNAME`, and `JIRA_API_TOKEN`
+- For Jira Server/Data Center: Include `JIRA_URL` and `JIRA_PERSONAL_TOKEN`
+- For SSE transport: Add `--transport sse` and `--port` arguments
+
+<details>
+<summary>View all configuration options</summary>
+
 | Setting | Environment Variable | CLI Argument | Cloud | Server/DC |
 |---------|-------------------|--------------|:-----:|:---------:|
 | **Confluence** |
@@ -83,6 +93,8 @@ The integration supports using either Confluence, Jira, or both services. You on
 | SSL Verify | `*_SSL_VERIFY` | `--[no-]*-ssl-verify` | X | Optional |
 | Transport | - | `--transport stdio\|sse` | Optional | Optional |
 | Port | - | `--port INTEGER` | Required for SSE | Required for SSE |
+
+</details>
 
 #### Quick Start Examples
 
