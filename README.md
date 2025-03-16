@@ -81,7 +81,7 @@ The integration supports using either Confluence, Jira, or both services. You on
 | PAT | `JIRA_PERSONAL_TOKEN` | `--jira-personal-token` | X | O |
 | **Common** |
 | SSL Verify | `*_SSL_VERIFY` | `--[no-]*-ssl-verify` | X | Optional |
-| Transport | - | `--transport TYPE` | Optional | Optional |
+| Transport | - | `--transport stdio\|sse` | Optional | Optional |
 | Port | - | `--port INTEGER` | Required for SSE | Required for SSE |
 
 #### Quick Start Examples
