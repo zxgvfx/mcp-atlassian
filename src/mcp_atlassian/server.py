@@ -83,9 +83,11 @@ async def server_lifespan(server: Server) -> AsyncIterator[AppContext]:
         # Log the startup information
         logger.info("Starting MCP Atlassian server")
         if confluence:
-            logger.info(f"Confluence URL: {confluence.config.url}")
+            confluence_url = confluence.config.url
+            logger.info(f"Confluence URL: {confluence_url}")
         if jira:
-            logger.info(f"Jira URL: {jira.config.url}")
+            jira_url = jira.config.url
+            logger.info(f"Jira URL: {jira_url}")
 
         # Provide context to the application
         yield AppContext(confluence=confluence, jira=jira)
