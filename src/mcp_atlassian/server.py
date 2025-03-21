@@ -350,6 +350,11 @@ async def list_tools() -> list[Tool]:
                                 "description": "Whether to include page metadata such as creation date, last update, version, and labels",
                                 "default": True,
                             },
+                            "convert_to_markdown": {
+                                "type": "boolean",
+                                "description": "Whether to convert page to markdown (true) or keep it in raw HTML format (false). Raw HTML can reveal macros (like dates) not visible in markdown, but CAUTION: using HTML significantly increases token usage in AI responses.",
+                                "default": True,
+                            },
                         },
                         "required": ["page_id"],
                     },
@@ -895,8 +900,11 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
 
             page_id = arguments.get("page_id")
             include_metadata = arguments.get("include_metadata", True)
+            convert_to_markdown = arguments.get("convert_to_markdown", True)
 
-            page = ctx.confluence.get_page_content(page_id)
+            page = ctx.confluence.get_page_content(
+                page_id, convert_to_markdown=convert_to_markdown
+            )
 
             if include_metadata:
                 # The to_simplified_dict method already includes the content,
