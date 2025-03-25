@@ -90,8 +90,65 @@ uvx mcp-atlassian \
 - `--[no-]jira-ssl-verify`: Toggle SSL verification for Jira Server/DC
 - `--verbose`: Increase logging verbosity (can be used multiple times)
 - `--read-only`: Run in read-only mode (disables all write operations)
+- `--confluence-spaces-filter`: Comma-separated list of space keys to filter Confluence search results (e.g., "DEV,TEAM,DOC")
+- `--jira-projects-filter`: Comma-separated list of project keys to filter Jira search results (e.g., "PROJ,DEV,SUPPORT")
 
 > **Note:** All configuration options can also be set via environment variables. See the `.env.example` file in the repository for the full list of available environment variables.
+
+<details>
+<summary>View all configuration options</summary>
+
+| Setting | Environment Variable | CLI Argument | Cloud | Server/DC |
+|---------|-------------------|--------------|:-----:|:---------:|
+| **Confluence** |
+| URL | `CONFLUENCE_URL` | `--confluence-url` | O | O |
+| Email | `CONFLUENCE_USERNAME` | `--confluence-username` | O | X |
+| API Token | `CONFLUENCE_API_TOKEN` | `--confluence-token` | O | X |
+| PAT | `CONFLUENCE_PERSONAL_TOKEN` | `--confluence-personal-token` | X | O |
+| Spaces Filter | `CONFLUENCE_SPACES_FILTER` | `--confluence-spaces-filter` | Optional | Optional |
+| **Jira** |
+| URL | `JIRA_URL` | `--jira-url` | O | O |
+| Email | `JIRA_USERNAME` | `--jira-username` | O | X |
+| API Token | `JIRA_API_TOKEN` | `--jira-token` | O | X |
+| PAT | `JIRA_PERSONAL_TOKEN` | `--jira-personal-token` | X | O |
+| Projects Filter | `JIRA_PROJECTS_FILTER` | `--jira-projects-filter` | Optional | Optional |
+| **Common** |
+| SSL Verify | `*_SSL_VERIFY` | `--[no-]*-ssl-verify` | X | Optional |
+| Transport | - | `--transport stdio\|sse` | Optional | Optional |
+| Port | - | `--port INTEGER` | Required for SSE | Required for SSE |
+| Read Only | `READ_ONLY_MODE` | `--read-only` | Optional | Optional |
+
+</details>
+
+#### Example with Optional Arguments
+
+```bash
+# Cloud with filters and SSE transport
+uvx mcp-atlassian \
+  --confluence-url https://your-company.atlassian.net/wiki \
+  --confluence-username your.email@company.com \
+  --confluence-token your_api_token \
+  --jira-url https://your-company.atlassian.net \
+  --jira-username your.email@company.com \
+  --jira-token your_api_token \
+  --confluence-spaces-filter DEV,TEAM,DOC \
+  --jira-projects-filter PROJ,DEV,SUPPORT \
+  --transport sse \
+  --port 8000
+
+# Server/DC with filters and SSL verification disabled
+uvx mcp-atlassian \
+  --confluence-url https://confluence.your-company.com \
+  --confluence-personal-token your_token \
+  --jira-url https://jira.your-company.com \
+  --jira-personal-token your_token \
+  --confluence-spaces-filter DEV,TEAM,DOC \
+  --jira-projects-filter PROJ,DEV,SUPPORT \
+  --no-confluence-ssl-verify \
+  --no-jira-ssl-verify
+```
+
+> **Note:** Filters help narrow down search results to the most relevant spaces or projects, improving response quality and performance.
 
 ## IDE Integration
 
