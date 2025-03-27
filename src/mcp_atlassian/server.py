@@ -535,6 +535,11 @@ async def list_tools() -> list[Tool]:
                                 "type": "string",
                                 "description": "Jira issue key (e.g., 'PROJ-123')",
                             },
+                            "fields": {
+                                "type": "string",
+                                "description": "Fields to return. Can be a comma-separated list (e.g., 'summary,status,customfield_10010'), '*all' for all fields (including custom fields), or omitted for essential fields only",
+                                "default": "summary,description,status,assignee,reporter,labels,priority,created,updated,issuetype",
+                            },
                             "expand": {
                                 "type": "string",
                                 "description": (
@@ -552,7 +557,17 @@ async def list_tools() -> list[Tool]:
                                 ),
                                 "minimum": 0,
                                 "maximum": 100,
+                                "default": 10,
+                            },
+                            "properties": {
+                                "type": "string",
+                                "description": "A comma-separated list of issue properties to return",
                                 "default": None,
+                            },
+                            "update_history": {
+                                "type": "boolean",
+                                "description": "Whether to update the issue view history for the requesting user",
+                                "default": True,
                             },
                         },
                         "required": ["issue_key"],
@@ -1191,11 +1206,22 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 raise ValueError("Jira is not configured.")
 
             issue_key = arguments.get("issue_key")
+            fields = arguments.get(
+                "fields",
+                "summary,description,status,assignee,reporter,labels,priority,created,updated,issuetype",
+            )
             expand = arguments.get("expand")
-            comment_limit = arguments.get("comment_limit")
+            comment_limit = arguments.get("comment_limit", 10)
+            properties = arguments.get("properties")
+            update_history = arguments.get("update_history", True)
 
             issue = ctx.jira.get_issue(
-                issue_key, expand=expand, comment_limit=comment_limit
+                issue_key,
+                fields=fields,
+                expand=expand,
+                comment_limit=comment_limit,
+                properties=properties,
+                update_history=update_history,
             )
 
             result = {"content": issue.to_simplified_dict()}
@@ -1211,7 +1237,10 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 raise ValueError("Jira is not configured.")
 
             jql = arguments.get("jql")
-            fields = arguments.get("fields", "*all")
+            fields = arguments.get(
+                "fields",
+                "summary,description,status,assignee,reporter,labels,priority,created,updated,issuetype",
+            )
             limit = min(int(arguments.get("limit", 10)), 50)
             projects_filter = arguments.get("projects_filter")
 
