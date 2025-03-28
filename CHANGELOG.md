@@ -2,28 +2,6 @@
 
 ## [Unreleased]
 
-## [0.4.0] - 2025-03-28
-
-### Added
-- Added support for retrieving Jira custom fields via MCP API (#157)
-- Added ability to download attachments from JIRA issues (#160)
-- Added development environment with devcontainer support (#159)
-- Added JiraBoards and get_all_agile_boards tool (#158)
-
-## [0.3.1] - 2025-03-27
-
-### Added
-- Added support for Jira and Confluence search filtering (#133)
-
-### Changed
-- Refactored utils module into specialized sub-modules for better organization (#154)
-- Updated documentation with new MCP setting guidance for Cursor IDE 0.47+ (#153)
-- Reduced default logging level to WARNING for better client compatibility (#155)
-
-### Fixed
-- Fixed SSLError when using SSL verification bypass option (#150)
-- Enabled legacy SSL renegotiation in Python 3.11+ environments
-
 ## [0.3.0] - 2025-03-25
 
 ### Added

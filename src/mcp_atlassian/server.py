@@ -12,8 +12,7 @@ from mcp.types import Resource, TextContent, Tool
 
 from .confluence import ConfluenceFetcher
 from .jira import JiraFetcher
-from .utils.io import is_read_only_mode
-from .utils.urls import is_atlassian_cloud_url
+from .utils import is_atlassian_cloud_url, is_read_only_mode
 
 # Configure logging
 logger = logging.getLogger("mcp-atlassian")
@@ -339,10 +338,6 @@ async def list_tools() -> list[Tool]:
                                 "minimum": 1,
                                 "maximum": 50,
                             },
-                            "spaces_filter": {
-                                "type": "string",
-                                "description": "Comma-separated list of space keys to filter results by. Overrides the environment variable CONFLUENCE_SPACES_FILTER if provided.",
-                            },
                         },
                         "required": ["query"],
                     },
@@ -535,11 +530,6 @@ async def list_tools() -> list[Tool]:
                                 "type": "string",
                                 "description": "Jira issue key (e.g., 'PROJ-123')",
                             },
-                            "fields": {
-                                "type": "string",
-                                "description": "Fields to return. Can be a comma-separated list (e.g., 'summary,status,customfield_10010'), '*all' for all fields (including custom fields), or omitted for essential fields only",
-                                "default": "summary,description,status,assignee,reporter,labels,priority,created,updated,issuetype",
-                            },
                             "expand": {
                                 "type": "string",
                                 "description": (
@@ -557,17 +547,7 @@ async def list_tools() -> list[Tool]:
                                 ),
                                 "minimum": 0,
                                 "maximum": 100,
-                                "default": 10,
-                            },
-                            "properties": {
-                                "type": "string",
-                                "description": "A comma-separated list of issue properties to return",
                                 "default": None,
-                            },
-                            "update_history": {
-                                "type": "boolean",
-                                "description": "Whether to update the issue view history for the requesting user",
-                                "default": True,
                             },
                         },
                         "required": ["issue_key"],
@@ -605,10 +585,6 @@ async def list_tools() -> list[Tool]:
                                 "default": 10,
                                 "minimum": 1,
                                 "maximum": 50,
-                            },
-                            "projects_filter": {
-                                "type": "string",
-                                "description": "Comma-separated list of project keys to filter results by. Overrides the environment variable JIRA_PROJECTS_FILTER if provided.",
                             },
                         },
                         "required": ["jql"],
@@ -682,24 +658,6 @@ async def list_tools() -> list[Tool]:
                             },
                         },
                         "required": ["issue_key"],
-                    },
-                ),
-                Tool(
-                    name="jira_download_attachments",
-                    description="Download attachments from a Jira issue",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "issue_key": {
-                                "type": "string",
-                                "description": "Jira issue key (e.g., 'PROJ-123')",
-                            },
-                            "target_dir": {
-                                "type": "string",
-                                "description": "Directory where attachments should be saved",
-                            },
-                        },
-                        "required": ["issue_key", "target_dir"],
                     },
                 ),
             ]
@@ -938,7 +896,6 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
 
             query = arguments.get("query", "")
             limit = min(int(arguments.get("limit", 10)), 50)
-            spaces_filter = arguments.get("spaces_filter")
 
             # Check if the query is a simple search term or already a CQL query
             if query and not any(
@@ -950,9 +907,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 query = f'text ~ "{query}"'
                 logger.info(f"Converting simple search term to CQL: {query}")
 
-            pages = ctx.confluence.search(
-                query, limit=limit, spaces_filter=spaces_filter
-            )
+            pages = ctx.confluence.search(query, limit=limit)
 
             # Format results using the to_simplified_dict method
             search_results = [page.to_simplified_dict() for page in pages]
@@ -1206,22 +1161,11 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 raise ValueError("Jira is not configured.")
 
             issue_key = arguments.get("issue_key")
-            fields = arguments.get(
-                "fields",
-                "summary,description,status,assignee,reporter,labels,priority,created,updated,issuetype",
-            )
             expand = arguments.get("expand")
-            comment_limit = arguments.get("comment_limit", 10)
-            properties = arguments.get("properties")
-            update_history = arguments.get("update_history", True)
+            comment_limit = arguments.get("comment_limit")
 
             issue = ctx.jira.get_issue(
-                issue_key,
-                fields=fields,
-                expand=expand,
-                comment_limit=comment_limit,
-                properties=properties,
-                update_history=update_history,
+                issue_key, expand=expand, comment_limit=comment_limit
             )
 
             result = {"content": issue.to_simplified_dict()}
@@ -1237,16 +1181,10 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 raise ValueError("Jira is not configured.")
 
             jql = arguments.get("jql")
-            fields = arguments.get(
-                "fields",
-                "summary,description,status,assignee,reporter,labels,priority,created,updated,issuetype",
-            )
+            fields = arguments.get("fields", "*all")
             limit = min(int(arguments.get("limit", 10)), 50)
-            projects_filter = arguments.get("projects_filter")
 
-            issues = ctx.jira.search_issues(
-                jql, fields=fields, limit=limit, projects_filter=projects_filter
-            )
+            issues = ctx.jira.search_issues(jql, fields=fields, limit=limit)
 
             # Format results using the to_simplified_dict method
             search_results = [issue.to_simplified_dict() for issue in issues]
@@ -1336,29 +1274,6 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
             worklogs = ctx.jira.get_worklogs(issue_key)
 
             result = {"worklogs": worklogs}
-
-            return [
-                TextContent(
-                    type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-                )
-            ]
-
-        elif name == "jira_download_attachments" and ctx and ctx.jira:
-            if not ctx or not ctx.jira:
-                raise ValueError("Jira is not configured.")
-
-            issue_key = arguments.get("issue_key")
-            target_dir = arguments.get("target_dir")
-
-            if not issue_key:
-                raise ValueError("Missing required parameter: issue_key")
-            if not target_dir:
-                raise ValueError("Missing required parameter: target_dir")
-
-            # Download the attachments
-            result = ctx.jira.download_issue_attachments(
-                issue_key=issue_key, target_dir=target_dir
-            )
 
             return [
                 TextContent(
