@@ -59,6 +59,9 @@ pip install mcp-atlassian
 git clone https://github.com/sooperset/mcp-atlassian.git
 cd mcp-atlassian
 docker build -t mcp/atlassian .
+
+# Using Smithery
+npx -y @smithery/cli install mcp-atlassian --client claude
 ```
 
 ### 3. Configuration and Usage
@@ -362,14 +365,6 @@ Then configure *only the URL* in Cursor's `~/.cursor/mcp.json`:
     }
   }
 }
-```
-
-### Installing via Smithery
-
-To install Atlassian Integration for Claude Desktop automatically via [Smithery](https://smithery.ai/server/mcp-atlassian):
-
-```bash
-npx -y @smithery/cli install mcp-atlassian --client claude
 ```
 
 ## Resources
