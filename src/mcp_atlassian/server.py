@@ -4,7 +4,7 @@ import os
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from atlassian.errors import ApiError
 from mcp.server import Server
@@ -650,6 +650,12 @@ async def list_tools() -> list[Tool]:
                                 "minimum": 1,
                                 "maximum": 50,
                             },
+                            "startAt": {
+                                "type": "number",
+                                "description": "Starting index for search results (0-based)",
+                                "default": 0,
+                                "minimum": 0,
+                            },
                             "projects_filter": {
                                 "type": "string",
                                 "description": "Comma-separated list of project keys to filter results by. Overrides the environment variable JIRA_PROJECTS_FILTER if provided.",
@@ -675,6 +681,12 @@ async def list_tools() -> list[Tool]:
                                 "minimum": 1,
                                 "maximum": 50,
                             },
+                            "startAt": {
+                                "type": "number",
+                                "description": "Starting index for issues (0-based)",
+                                "default": 0,
+                                "minimum": 0,
+                            },
                         },
                         "required": ["project_key"],
                     },
@@ -695,6 +707,12 @@ async def list_tools() -> list[Tool]:
                                 "default": 10,
                                 "minimum": 1,
                                 "maximum": 50,
+                            },
+                            "startAt": {
+                                "type": "number",
+                                "description": "Starting index for issues (0-based)",
+                                "default": 0,
+                                "minimum": 0,
                             },
                         },
                         "required": ["epic_key"],
@@ -909,9 +927,11 @@ async def list_tools() -> list[Tool]:
                             "properties": {
                                 "project_key": {
                                     "type": "string",
-                                    "description": "The JIRA project key (e.g. 'PROJ', 'DEV', 'SUPPORT'). "
-                                    "This is the prefix of issue keys in your project. "
-                                    "Never assume what it might be, always ask the user.",
+                                    "description": (
+                                        "The JIRA project key (e.g. 'PROJ', 'DEV', 'SUPPORT'). "
+                                        "This is the prefix of issue keys in your project. "
+                                        "Never assume what it might be, always ask the user."
+                                    ),
                                 },
                                 "summary": {
                                     "type": "string",
@@ -936,13 +956,15 @@ async def list_tools() -> list[Tool]:
                                 },
                                 "additional_fields": {
                                     "type": "string",
-                                    "description": "Optional JSON string of additional fields to set. "
-                                    "Examples:\n"
-                                    '- Set priority: {"priority": {"name": "High"}}\n'
-                                    '- Add labels: {"labels": ["frontend", "urgent"]}\n'
-                                    '- Add components: {"components": [{"name": "UI"}]}\n'
-                                    '- Link to parent (for any issue type): {"parent": "PROJ-123"}\n'
-                                    '- Custom fields: {"customfield_10010": "value"}',
+                                    "description": (
+                                        "Optional JSON string of additional fields to set. "
+                                        "Examples:\n"
+                                        '- Set priority: {"priority": {"name": "High"}}\n'
+                                        '- Add labels: {"labels": ["frontend", "urgent"]}\n'
+                                        '- Add components: {"components": [{"name": "UI"}]}\n'
+                                        '- Link to parent (for any issue type): {"parent": "PROJ-123"}\n'
+                                        '- Custom fields: {"customfield_10010": "value"}'
+                                    ),
                                     "default": "{}",
                                 },
                             },
@@ -961,9 +983,11 @@ async def list_tools() -> list[Tool]:
                                 },
                                 "fields": {
                                     "type": "string",
-                                    "description": "A valid JSON object of fields to update as a string. "
-                                    'Example: \'{"summary": "New title", "description": "Updated description", '
-                                    '"priority": {"name": "High"}, "assignee": {"name": "john.doe"}}\'',
+                                    "description": (
+                                        "A valid JSON object of fields to update as a string. "
+                                        'Example: \'{"summary": "New title", "description": "Updated description", '
+                                        '"priority": {"name": "High"}, "assignee": {"name": "john.doe"}}\''
+                                    ),
                                 },
                                 "additional_fields": {
                                     "type": "string",
@@ -1118,9 +1142,10 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
 
     try:
         # Helper functions for formatting results
-        def format_comment(comment: Any) -> dict:
+        def format_comment(comment: Any) -> dict[str, Any]:
             if hasattr(comment, "to_simplified_dict"):
-                return comment.to_simplified_dict()
+                # Cast the return value to dict[str, Any] to satisfy the type checker
+                return cast(dict[str, Any], comment.to_simplified_dict())
             return {
                 "id": comment.get("id"),
                 "author": comment.get("author", {}).get("displayName", "Unknown"),
@@ -1201,11 +1226,6 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
             # Add body.storage to expand if content is requested
             if include_content and "body" not in expand:
                 expand = f"{expand},body.storage"
-
-            # Get the child pages
-            pages = ctx.confluence.get_page_children(
-                page_id=parent_id, expand=expand, limit=limit, convert_to_markdown=True
-            )
 
             # Format results using the to_simplified_dict method
             child_pages = [page.to_simplified_dict() for page in pages]
@@ -1494,9 +1514,14 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
             )
             limit = min(int(arguments.get("limit", 10)), 50)
             projects_filter = arguments.get("projects_filter")
+            start_at = int(arguments.get("startAt", 0))  # Get startAt, default to 0
 
             issues = ctx.jira.search_issues(
-                jql, fields=fields, limit=limit, projects_filter=projects_filter
+                jql,
+                fields=fields,
+                limit=limit,
+                start=start_at,  # Pass start_at here
+                projects_filter=projects_filter,
             )
 
             # Format results using the to_simplified_dict method
@@ -1515,8 +1540,11 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
 
             project_key = arguments.get("project_key")
             limit = min(int(arguments.get("limit", 10)), 50)
+            start_at = int(arguments.get("startAt", 0))  # Get startAt
 
-            issues = ctx.jira.get_project_issues(project_key, limit=limit)
+            issues = ctx.jira.get_project_issues(
+                project_key, start=start_at, limit=limit
+            )
 
             # Format results
             project_issues = [issue.to_simplified_dict() for issue in issues]
@@ -1534,9 +1562,10 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
 
             epic_key = arguments.get("epic_key")
             limit = min(int(arguments.get("limit", 10)), 50)
+            start_at = int(arguments.get("startAt", 0))  # Get startAt
 
             # Get issues linked to the epic
-            issues = ctx.jira.get_epic_issues(epic_key, limit=limit)
+            issues = ctx.jira.get_epic_issues(epic_key, start=start_at, limit=limit)
 
             # Format results
             epic_issues = [issue.to_simplified_dict() for issue in issues]
