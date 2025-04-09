@@ -2,6 +2,88 @@
 
 ## [Unreleased]
 
+## [0.6.3] - 2025-04-07
+
+### Added
+- Added support for Jira timetracking field with proper model field mapping (#217, #213)
+
+### Changed
+- Updated documentation to include fixVersions example in jira_create_issue additional_fields parameter (#216)
+
+### Fixed
+- Changed components parameter type from array to string for Windsurf compatibility (#215)
+
+## [0.6.2] - 2025-04-05
+
+### Added
+- Enhanced component support for Jira issues to allow multiple components when creating tickets (#208, #115)
+
+### Fixed
+- Fixed variable scope issue in confluence_get_page_children where local variable 'pages' was not accessible due to improper indentation (#209, #206)
+
+## [0.6.1] - 2025-04-05
+
+### Added
+- Return count metadata (`total`, `start_at`, `max_results`) in Jira search results (`jira_search`, `jira_get_project_issues`, `jira_get_epic_issues`) to enable pagination and count-based queries (#203, #164)
+
+## [0.6.0] - 2025-04-05
+
+### Added
+- Add pagination support to Jira list tools with new `startAt` parameter for `jira_search`, `jira_get_project_issues`, and `jira_get_epic_issues` (#198)
+- Add pytest workflow for automated testing across multiple Python versions (3.10, 3.11, 3.12) (#200)
+- Add Smithery deployment and installation support (#194)
+
+### Changed
+- Unify pagination parameter names to 'startAt' across Jira tools for better consistency and developer experience (#201)
+- Improve configuration documentation and readability in .env.example with clear sections and alternative options (#192)
+
+### Fixed
+- Fix model property access in JiraIssue to prevent custom fields from overriding model properties (#199)
+- Fix read_resource signature to properly take in an AnyUrl and return str (#195)
+- Correct command invocation instructions in README.md to use the `mcp-atlassian` script instead of incorrect `python -m` commands (#197)
+- Update server tests for read_resource signature change (#199)
+
+## [0.5.0] - 2025-04-03
+
+### Added
+- Add tools to retrieve Jira Agile boards (`jira_get_agile_boards`), sprints (`jira_get_sprints_from_board`), board issues (`jira_get_board_issues`), and sprint issues (`jira_get_sprint_issues`) (#166)
+- Implement Jira attachment upload functionality via `jira_update_issue` tool using the `attachments` parameter (#168, #7ad3485)
+- Add tool to attach content to Confluence pages (`confluence_attach_content`) (#178)
+- Add explicit `MCPAtlassianAuthenticationError` for handling 401/403 authentication errors, providing clearer feedback for expired tokens or permission issues (#190, #183)
+
+### Changed
+- Improve custom field handling in `JiraIssue` model to automatically include all fields not explicitly processed under `custom_fields`, making more data accessible (#182)
+- Enable basic authentication support (username/API token) for on-premise/Data Center Confluence instances, previously only token auth was explicitly checked (#173)
+- General updates and refinements to Jira issue handling logic (#187)
+
+### Fixed
+- Parse `fixVersions` field correctly in Jira issues, previously missed (#162)
+- Fix JQL error in `list_resources` when user identifier (e.g., email) contains special characters like '@' by properly quoting and escaping the identifier (#180, #172)
+- Fix Confluence search (`confluence_search`) and resource reading (`read_resource` for space URIs) when using space keys that require quotes (e.g., personal spaces '~...', reserved CQL words, numeric keys) by adding conditional CQL identifier quoting (#185, #184)
+- Fix Python C-level timestamp conversion error ("timestamp too large") when fetching user data from Jira Data Center 9.x instances by using a direct API request bypassing the problematic library parsing (#189, #171)
+
+## [0.4.0] - 2025-03-28
+
+### Added
+- Added support for retrieving Jira custom fields via MCP API (#157)
+- Added ability to download attachments from JIRA issues (#160)
+- Added development environment with devcontainer support (#159)
+- Added JiraBoards and get_all_agile_boards tool (#158)
+
+## [0.3.1] - 2025-03-27
+
+### Added
+- Added support for Jira and Confluence search filtering (#133)
+
+### Changed
+- Refactored utils module into specialized sub-modules for better organization (#154)
+- Updated documentation with new MCP setting guidance for Cursor IDE 0.47+ (#153)
+- Reduced default logging level to WARNING for better client compatibility (#155)
+
+### Fixed
+- Fixed SSLError when using SSL verification bypass option (#150)
+- Enabled legacy SSL renegotiation in Python 3.11+ environments
+
 ## [0.3.0] - 2025-03-25
 
 ### Added

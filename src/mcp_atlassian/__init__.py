@@ -1,14 +1,21 @@
 import asyncio
 import logging
 import os
-import sys
 
 import click
 from dotenv import load_dotenv
 
-__version__ = "0.3.0"
+from .utils.logging import setup_logging
 
-logger = logging.getLogger("mcp-atlassian")
+__version__ = "0.6.3"
+
+# Initialize logging with appropriate level
+logging_level = logging.WARNING
+if os.getenv("MCP_VERBOSE", "").lower() in ("true", "1", "yes"):
+    logging_level = logging.DEBUG
+
+# Set up logging using the utility function
+logger = setup_logging(logging_level)
 
 
 @click.command()
@@ -48,6 +55,10 @@ logger = logging.getLogger("mcp-atlassian")
     help="Verify SSL certificates for Confluence Server/Data Center (default: verify)",
 )
 @click.option(
+    "--confluence-spaces-filter",
+    help="Comma-separated list of Confluence space keys to filter search results",
+)
+@click.option(
     "--jira-url",
     help="Jira URL (e.g., https://your-domain.atlassian.net or https://jira.your-company.com)",
 )
@@ -61,6 +72,10 @@ logger = logging.getLogger("mcp-atlassian")
     "--jira-ssl-verify/--no-jira-ssl-verify",
     default=True,
     help="Verify SSL certificates for Jira Server/Data Center (default: verify)",
+)
+@click.option(
+    "--jira-projects-filter",
+    help="Comma-separated list of Jira project keys to filter search results",
 )
 @click.option(
     "--read-only",
@@ -77,11 +92,13 @@ def main(
     confluence_token: str | None,
     confluence_personal_token: str | None,
     confluence_ssl_verify: bool,
+    confluence_spaces_filter: str | None,
     jira_url: str | None,
     jira_username: str | None,
     jira_token: str | None,
     jira_personal_token: str | None,
     jira_ssl_verify: bool,
+    jira_projects_filter: str | None,
     read_only: bool = False,
 ) -> None:
     """MCP Atlassian Server - Jira and Confluence functionality for MCP
@@ -89,13 +106,15 @@ def main(
     Supports both Atlassian Cloud and Jira Server/Data Center deployments.
     """
     # Configure logging based on verbosity
-    logging_level = logging.INFO
+    logging_level = logging.WARNING
     if verbose == 1:
         logging_level = logging.INFO
     elif verbose >= 2:
         logging_level = logging.DEBUG
 
-    logging.basicConfig(level=logging_level, stream=sys.stderr)
+    # Use our utility function for logging setup
+    global logger
+    logger = setup_logging(logging_level)
 
     # Load environment variables from file if specified, otherwise try default .env
     if env_file:
@@ -130,8 +149,16 @@ def main(
     # Set SSL verification for Confluence Server/Data Center
     os.environ["CONFLUENCE_SSL_VERIFY"] = str(confluence_ssl_verify).lower()
 
+    # Set spaces filter for Confluence
+    if confluence_spaces_filter:
+        os.environ["CONFLUENCE_SPACES_FILTER"] = confluence_spaces_filter
+
     # Set SSL verification for Jira Server/Data Center
     os.environ["JIRA_SSL_VERIFY"] = str(jira_ssl_verify).lower()
+
+    # Set projects filter for Jira
+    if jira_projects_filter:
+        os.environ["JIRA_PROJECTS_FILTER"] = jira_projects_filter
 
     from . import server
 

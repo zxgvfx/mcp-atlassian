@@ -3,6 +3,9 @@
 import logging
 from typing import Any
 
+from requests.exceptions import HTTPError
+
+from ..exceptions import MCPAtlassianAuthenticationError
 from ..models.jira import JiraIssue
 from .users import UsersMixin
 from .utils import parse_date_human_readable
@@ -18,6 +21,13 @@ class IssuesMixin(UsersMixin):
         issue_key: str,
         expand: str | None = None,
         comment_limit: int | str | None = 10,
+        fields: str
+        | list[str]
+        | tuple[str, ...]
+        | set[str]
+        | None = "summary,description,status,assignee,reporter,labels,priority,created,updated,issuetype",
+        properties: str | list[str] | None = None,
+        update_history: bool = True,
     ) -> JiraIssue:
         """
         Get a Jira issue by key.
@@ -26,26 +36,111 @@ class IssuesMixin(UsersMixin):
             issue_key: The issue key (e.g., PROJECT-123)
             expand: Fields to expand in the response
             comment_limit: Maximum number of comments to include, or "all"
+            fields: Fields to return (comma-separated string, list, tuple, set, or "*all")
+            properties: Issue properties to return (comma-separated string or list)
+            update_history: Whether to update the issue view history
 
         Returns:
             JiraIssue model with issue data and metadata
 
         Raises:
+            MCPAtlassianAuthenticationError: If authentication fails with the Jira API (401/403)
             Exception: If there is an error retrieving the issue
         """
         try:
+            # Ensure necessary fields are included based on special parameters
+            if (
+                isinstance(fields, str)
+                and fields
+                == "summary,description,status,assignee,reporter,labels,priority,created,updated,issuetype"
+            ):
+                # Default fields are being used - preserve the order
+                default_fields_list = fields.split(",")
+                additional_fields = []
+
+                # Add 'comment' field if comment_limit is specified and non-zero
+                if (
+                    comment_limit
+                    and comment_limit != 0
+                    and "comment" not in default_fields_list
+                ):
+                    additional_fields.append("comment")
+
+                # Add appropriate fields based on expand parameter
+                if expand:
+                    expand_params = expand.split(",")
+                    if (
+                        "changelog" in expand_params
+                        and "changelog" not in default_fields_list
+                        and "changelog" not in additional_fields
+                    ):
+                        additional_fields.append("changelog")
+                    if (
+                        "renderedFields" in expand_params
+                        and "rendered" not in default_fields_list
+                        and "rendered" not in additional_fields
+                    ):
+                        additional_fields.append("rendered")
+
+                # Add appropriate fields based on properties parameter
+                if (
+                    properties
+                    and "properties" not in default_fields_list
+                    and "properties" not in additional_fields
+                ):
+                    additional_fields.append("properties")
+
+                # Combine default fields with additional fields, preserving order
+                if additional_fields:
+                    fields = fields + "," + ",".join(additional_fields)
+            # Handle non-default fields string
+            elif comment_limit and comment_limit != 0:
+                if isinstance(fields, str):
+                    if fields != "*all" and "comment" not in fields:
+                        # Add comment to string fields
+                        fields += ",comment"
+                elif isinstance(fields, list) and "comment" not in fields:
+                    # Add comment to list fields
+                    fields = fields + ["comment"]
+                elif isinstance(fields, tuple) and "comment" not in fields:
+                    # Convert tuple to list, add comment, then convert back to tuple
+                    fields_list = list(fields)
+                    fields_list.append("comment")
+                    fields = tuple(fields_list)
+                elif isinstance(fields, set) and "comment" not in fields:
+                    # Add comment to set fields
+                    fields_copy = fields.copy()
+                    fields_copy.add("comment")
+                    fields = fields_copy
+
             # Build expand parameter if provided
             expand_param = None
             if expand:
                 expand_param = expand
 
-            # Get the issue data
-            issue = self.jira.issue(issue_key, expand=expand_param)
+            # Convert fields to proper format if it's a list/tuple/set
+            fields_param = fields
+            if fields and isinstance(fields, list | tuple | set):
+                fields_param = ",".join(fields)
+
+            # Convert properties to proper format if it's a list
+            properties_param = properties
+            if properties and isinstance(properties, list | tuple | set):
+                properties_param = ",".join(properties)
+
+            # Get the issue data with all parameters
+            issue = self.jira.get_issue(
+                issue_key,
+                expand=expand_param,
+                fields=fields_param,
+                properties=properties_param,
+                update_history=update_history,
+            )
             if not issue:
                 raise ValueError(f"Issue {issue_key} not found")
 
             # Extract fields data, safely handling None
-            fields = issue.get("fields", {}) or {}
+            fields_data = issue.get("fields", {}) or {}
 
             # Get comments if needed
             comment_limit_int = self._normalize_comment_limit(comment_limit)
@@ -57,9 +152,9 @@ class IssuesMixin(UsersMixin):
 
             # Add comments to the issue data for processing by the model
             if comments:
-                if "comment" not in fields:
-                    fields["comment"] = {}
-                fields["comment"]["comments"] = comments
+                if "comment" not in fields_data:
+                    fields_data["comment"] = {}
+                fields_data["comment"]["comments"] = comments
 
             # Extract epic information
             try:
@@ -77,25 +172,43 @@ class IssuesMixin(UsersMixin):
                     # Add epic link field if it doesn't exist
                     if (
                         "epic_link" in field_ids
-                        and field_ids["epic_link"] not in fields
+                        and field_ids["epic_link"] not in fields_data
                     ):
-                        fields[field_ids["epic_link"]] = epic_info["epic_key"]
+                        fields_data[field_ids["epic_link"]] = epic_info["epic_key"]
 
                     # Add epic name field if it doesn't exist
                     if (
                         epic_info.get("epic_name")
                         and "epic_name" in field_ids
-                        and field_ids["epic_name"] not in fields
+                        and field_ids["epic_name"] not in fields_data
                     ):
-                        fields[field_ids["epic_name"]] = epic_info["epic_name"]
+                        fields_data[field_ids["epic_name"]] = epic_info["epic_name"]
                 except Exception as e:
                     logger.warning(f"Error setting epic fields: {str(e)}")
 
             # Update the issue data with the fields
-            issue["fields"] = fields
+            issue["fields"] = fields_data
 
-            # Create and return the JiraIssue model
-            return JiraIssue.from_api_response(issue, base_url=self.config.url)
+            # Create and return the JiraIssue model, passing requested_fields
+            return JiraIssue.from_api_response(
+                issue,
+                base_url=self.config.url if hasattr(self, "config") else None,
+                requested_fields=fields,
+            )
+        except HTTPError as http_err:
+            if http_err.response is not None and http_err.response.status_code in [
+                401,
+                403,
+            ]:
+                error_msg = (
+                    f"Authentication failed for Jira API ({http_err.response.status_code}). "
+                    "Token may be expired or invalid. Please verify credentials."
+                )
+                logger.error(error_msg)
+                raise MCPAtlassianAuthenticationError(error_msg) from http_err
+            else:
+                logger.error(f"HTTP error during API call: {http_err}", exc_info=False)
+                raise http_err
         except Exception as e:
             error_msg = str(e)
             logger.error(f"Error retrieving issue {issue_key}: {error_msg}")
@@ -203,7 +316,13 @@ class IssuesMixin(UsersMixin):
 
                     # Try to get epic details
                     try:
-                        epic = self.jira.issue(epic_key)
+                        epic = self.jira.get_issue(
+                            epic_key,
+                            expand=None,
+                            fields=None,
+                            properties=None,
+                            update_history=True,
+                        )
                         epic_fields = epic.get("fields", {}) or {}
 
                         # Get epic name using the discovered field ID
@@ -377,6 +496,7 @@ class IssuesMixin(UsersMixin):
         issue_type: str,
         description: str = "",
         assignee: str | None = None,
+        components: list[str] | None = None,
         **kwargs: Any,  # noqa: ANN401 - Dynamic field types are necessary for Jira API
     ) -> JiraIssue:
         """
@@ -388,6 +508,7 @@ class IssuesMixin(UsersMixin):
             issue_type: The type of issue to create
             description: The issue description
             assignee: The username or account ID of the assignee
+            components: List of component names to assign (e.g., ["Frontend", "API"])
             **kwargs: Additional fields to set on the issue
 
         Returns:
@@ -423,6 +544,21 @@ class IssuesMixin(UsersMixin):
                     self._add_assignee_to_fields(fields, account_id)
                 except ValueError as e:
                     logger.warning(f"Could not assign issue: {str(e)}")
+
+            # Add components if provided
+            if components:
+                if isinstance(components, list):
+                    # Filter out any None or empty/whitespace-only strings
+                    valid_components = [
+                        comp_name.strip()
+                        for comp_name in components
+                        if isinstance(comp_name, str) and comp_name.strip()
+                    ]
+                    if valid_components:
+                        # Format as list of {"name": ...} dicts for the API
+                        fields["components"] = [
+                            {"name": comp_name} for comp_name in valid_components
+                        ]
 
             # Make a copy of kwargs to preserve original values for two-step Epic creation
             kwargs_copy = kwargs.copy()
@@ -473,7 +609,7 @@ class IssuesMixin(UsersMixin):
                         )
 
             # Get the full issue data and convert to JiraIssue model
-            issue_data = self.jira.issue(issue_key)
+            issue_data = self.jira.get_issue(issue_key)
             return JiraIssue.from_api_response(issue_data)
 
         except Exception as e:
@@ -558,10 +694,31 @@ class IssuesMixin(UsersMixin):
 
         # Process each kwarg
         for key, value in kwargs.items():
+            # Explicitly handle components field
+            if key.lower() == "components":
+                # Assuming the value is already in the correct format e.g., [{'name': 'Vortex'}] or [{'id': '11004'}]
+                # We need the actual field ID for components. Let's try the common one, but this might need adjustment.
+                # If 'Components' field ID is known, use it directly. Otherwise, try a common default or log a warning.
+                component_field_id = field_ids.get(
+                    "Components", field_ids.get("components")
+                )  # Try both cases
+                if component_field_id:
+                    fields[component_field_id] = value
+                    logger.debug(
+                        f"Explicitly added components using field ID: {component_field_id}"
+                    )
+                else:
+                    # Fallback or warning if component ID not found
+                    logger.warning(
+                        "Could not find field ID for 'Components'. Components may not be set."
+                    )
+                continue  # Skip further processing for components
+
             if key in ("epic_name", "epic_link", "parent"):
                 continue  # Handled separately
 
             # Check if this is a known field
+            # Use case-insensitive check for field names if needed, but rely on field_ids map primarily
             if key in field_ids:
                 fields[field_ids[key]] = value
             elif key.startswith("customfield_"):
@@ -604,7 +761,10 @@ class IssuesMixin(UsersMixin):
         Args:
             issue_key: The key of the issue to update
             fields: Dictionary of fields to update
-            **kwargs: Additional fields to update
+            **kwargs: Additional fields to update. Special fields include:
+                - attachments: List of file paths to upload as attachments
+                - status: New status for the issue (handled via transitions)
+                - assignee: New assignee for the issue
 
         Returns:
             JiraIssue model representing the updated issue
@@ -618,6 +778,7 @@ class IssuesMixin(UsersMixin):
                 raise ValueError("Issue key is required")
 
             update_fields = fields or {}
+            attachments_result = None
 
             # Process kwargs
             for key, value in kwargs.items():
@@ -627,7 +788,19 @@ class IssuesMixin(UsersMixin):
                     update_fields["status"] = value
                     return self._update_issue_with_status(issue_key, update_fields)
 
-                if key == "assignee":
+                elif key == "attachments":
+                    # Handle attachments separately - they're not part of fields update
+                    if (
+                        value
+                        and isinstance(value, list | tuple)
+                        and hasattr(self, "upload_attachments")
+                    ):
+                        # We'll process attachments after updating fields
+                        pass
+                    else:
+                        logger.warning(f"Invalid attachments value: {value}")
+
+                elif key == "assignee":
                     # Handle assignee updates
                     try:
                         account_id = self._get_account_id(value)
@@ -644,15 +817,40 @@ class IssuesMixin(UsersMixin):
                     else:
                         update_fields[key] = value
 
-            # Update the issue
+            # Update the issue fields
             if update_fields:
                 self.jira.update_issue(
                     issue_key=issue_key, update={"fields": update_fields}
                 )
 
+            # Handle attachments if provided
+            if (
+                "attachments" in kwargs
+                and kwargs["attachments"]
+                and hasattr(self, "upload_attachments")
+            ):
+                try:
+                    attachments_result = self.upload_attachments(
+                        issue_key, kwargs["attachments"]
+                    )
+                    logger.info(
+                        f"Uploaded attachments to {issue_key}: {attachments_result}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Error uploading attachments to {issue_key}: {str(e)}"
+                    )
+                    # Continue with the update even if attachments fail
+
             # Get the updated issue data and convert to JiraIssue model
-            issue_data = self.jira.issue(issue_key)
-            return JiraIssue.from_api_response(issue_data)
+            issue_data = self.jira.get_issue(issue_key)
+            issue = JiraIssue.from_api_response(issue_data)
+
+            # Add attachment results to the response if available
+            if attachments_result:
+                issue.custom_fields["attachment_results"] = attachments_result
+
+            return issue
 
         except Exception as e:
             error_msg = str(e)
@@ -684,7 +882,7 @@ class IssuesMixin(UsersMixin):
 
         # If no status change is requested, return the issue
         if not status:
-            issue_data = self.jira.issue(issue_key)
+            issue_data = self.jira.get_issue(issue_key)
             return JiraIssue.from_api_response(issue_data)
 
         # Get available transitions
@@ -781,7 +979,7 @@ class IssuesMixin(UsersMixin):
         )
 
         # Get the updated issue data
-        issue_data = self.jira.issue(issue_key)
+        issue_data = self.jira.get_issue(issue_key)
         return JiraIssue.from_api_response(issue_data)
 
     def delete_issue(self, issue_key: str) -> bool:

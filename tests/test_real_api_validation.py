@@ -18,28 +18,27 @@ Required environment variables:
 """
 
 import datetime
+import json
 import os
 import uuid
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Sequence
 
 import pytest
+from mcp.types import TextContent
 
 from mcp_atlassian.confluence import ConfluenceFetcher
-
-# Import Confluence models and modules
 from mcp_atlassian.confluence.comments import CommentsMixin as ConfluenceCommentsMixin
 from mcp_atlassian.confluence.config import ConfluenceConfig
 from mcp_atlassian.confluence.pages import PagesMixin
 from mcp_atlassian.confluence.search import SearchMixin as ConfluenceSearchMixin
 from mcp_atlassian.jira import JiraFetcher
-
-# Import Jira models and modules
 from mcp_atlassian.jira.comments import CommentsMixin as JiraCommentsMixin
 from mcp_atlassian.jira.config import JiraConfig
 from mcp_atlassian.jira.issues import IssuesMixin
 from mcp_atlassian.jira.search import SearchMixin as JiraSearchMixin
 from mcp_atlassian.models.confluence import ConfluenceComment, ConfluencePage
 from mcp_atlassian.models.jira import JiraIssue
+from mcp_atlassian.server import call_tool
 
 
 # Resource tracking for cleanup
@@ -180,10 +179,9 @@ def test_space_key() -> str:
 
 @pytest.fixture
 def resource_tracker() -> Generator[ResourceTracker, None, None]:
-    """Create a resource tracker for cleanup after tests."""
+    """Create and yield a ResourceTracker that will be used to clean up after tests."""
     tracker = ResourceTracker()
     yield tracker
-    # Cleanup happens automatically when the fixture is finalized
 
 
 @pytest.fixture
@@ -192,10 +190,12 @@ def cleanup_resources(
     jira_client: JiraFetcher,
     confluence_client: ConfluenceFetcher,
 ) -> Callable[[], None]:
-    """Return a function that will clean up all tracked resources."""
+    """Return a function that can be called to clean up resources."""
 
     def _cleanup():
-        resource_tracker.cleanup(jira_client, confluence_client)
+        resource_tracker.cleanup(
+            jira_client=jira_client, confluence_client=confluence_client
+        )
 
     return _cleanup
 
@@ -1095,3 +1095,129 @@ async def test_jira_create_epic_two_step(
         raise
     finally:
         cleanup_resources()
+
+
+# Tool Validation Tests (Requires --use-real-data)
+# These tests use the server's call_tool handler to test the full flow
+@pytest.mark.usefixtures("use_real_jira_data")
+class TestRealToolValidation:
+    """
+    Test class for validating tool calls with real API data.
+    """
+
+    @pytest.mark.anyio
+    async def test_jira_search_with_start_at(
+        self, use_real_jira_data: bool, test_project_key: str
+    ) -> None:
+        """Test the jira_search tool with the startAt parameter."""
+        if not use_real_jira_data:
+            pytest.skip("Real Jira data testing is disabled")
+
+        jql = f'project = "{test_project_key}" ORDER BY created ASC'
+        limit = 1
+
+        # Call 1: startAt = 0
+        args1 = {"jql": jql, "limit": limit, "startAt": 0}
+        result1_content: Sequence[TextContent] = await call_tool("jira_search", args1)
+        assert result1_content and isinstance(result1_content[0], TextContent)
+        results1 = json.loads(result1_content[0].text)
+
+        # Call 2: startAt = 1
+        args2 = {"jql": jql, "limit": limit, "startAt": 1}
+        result2_content: Sequence[TextContent] = await call_tool("jira_search", args2)
+        assert result2_content and isinstance(result2_content[0], TextContent)
+        results2 = json.loads(result2_content[0].text)
+
+        # Assertions (assuming project has at least 2 issues)
+        assert isinstance(results1, list)
+        assert isinstance(results2, list)
+
+        if len(results1) > 0 and len(results2) > 0:
+            assert results1[0]["key"] != results2[0]["key"], (
+                f"Expected different issues with startAt=0 and startAt=1, but got {results1[0]['key']} for both."
+                f" Ensure project '{test_project_key}' has at least 2 issues."
+            )
+        elif len(results1) <= 1:
+            pytest.skip(
+                f"Project {test_project_key} has less than 2 issues, cannot test pagination."
+            )
+
+    @pytest.mark.anyio
+    async def test_jira_get_project_issues_with_start_at(
+        self, use_real_jira_data: bool, test_project_key: str
+    ) -> None:
+        """Test the jira_get_project_issues tool with the startAt parameter."""
+        if not use_real_jira_data:
+            pytest.skip("Real Jira data testing is disabled")
+
+        limit = 1
+
+        # Call 1: startAt = 0
+        args1 = {"project_key": test_project_key, "limit": limit, "startAt": 0}
+        result1_content: Sequence[TextContent] = await call_tool(
+            "jira_get_project_issues", args1
+        )
+        assert result1_content and isinstance(result1_content[0], TextContent)
+        results1 = json.loads(result1_content[0].text)
+
+        # Call 2: startAt = 1
+        args2 = {"project_key": test_project_key, "limit": limit, "startAt": 1}
+        result2_content: Sequence[TextContent] = await call_tool(
+            "jira_get_project_issues", args2
+        )
+        assert result2_content and isinstance(result2_content[0], TextContent)
+        results2 = json.loads(result2_content[0].text)
+
+        # Assertions (assuming project has at least 2 issues)
+        assert isinstance(results1, list)
+        assert isinstance(results2, list)
+
+        if len(results1) > 0 and len(results2) > 0:
+            assert results1[0]["key"] != results2[0]["key"], (
+                f"Expected different issues with startAt=0 and startAt=1, but got {results1[0]['key']} for both."
+                f" Ensure project '{test_project_key}' has at least 2 issues."
+            )
+        elif len(results1) <= 1:
+            pytest.skip(
+                f"Project {test_project_key} has less than 2 issues, cannot test pagination."
+            )
+
+    @pytest.mark.anyio
+    async def test_jira_get_epic_issues_with_start_at(
+        self, use_real_jira_data: bool, test_epic_key: str
+    ) -> None:
+        """Test the jira_get_epic_issues tool with the startAt parameter."""
+        if not use_real_jira_data:
+            pytest.skip("Real Jira data testing is disabled")
+
+        limit = 1
+
+        # Call 1: startAt = 0
+        args1 = {"epic_key": test_epic_key, "limit": limit, "startAt": 0}
+        result1_content: Sequence[TextContent] = await call_tool(
+            "jira_get_epic_issues", args1
+        )
+        assert result1_content and isinstance(result1_content[0], TextContent)
+        results1 = json.loads(result1_content[0].text)
+
+        # Call 2: startAt = 1
+        args2 = {"epic_key": test_epic_key, "limit": limit, "startAt": 1}
+        result2_content: Sequence[TextContent] = await call_tool(
+            "jira_get_epic_issues", args2
+        )
+        assert result2_content and isinstance(result2_content[0], TextContent)
+        results2 = json.loads(result2_content[0].text)
+
+        # Assertions (assuming epic has at least 2 issues)
+        assert isinstance(results1, list)
+        assert isinstance(results2, list)
+
+        if len(results1) > 0 and len(results2) > 0:
+            assert results1[0]["key"] != results2[0]["key"], (
+                f"Expected different issues with startAt=0 and startAt=1, but got {results1[0]['key']} for both."
+                f" Ensure epic '{test_epic_key}' has at least 2 linked issues."
+            )
+        elif len(results1) <= 1:
+            pytest.skip(
+                f"Epic {test_epic_key} has less than 2 issues, cannot test pagination."
+            )

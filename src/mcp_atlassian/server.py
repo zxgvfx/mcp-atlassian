@@ -4,15 +4,20 @@ import os
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
-from urllib.parse import urlparse
+from typing import Any, cast
 
+from atlassian.errors import ApiError
 from mcp.server import Server
 from mcp.types import Resource, TextContent, Tool
+from pydantic import AnyUrl
+from requests.exceptions import RequestException
 
 from .confluence import ConfluenceFetcher
+from .confluence.utils import quote_cql_identifier_if_needed
 from .jira import JiraFetcher
-from .utils import is_atlassian_cloud_url, is_read_only_mode
+from .jira.utils import escape_jql_string
+from .utils.io import is_read_only_mode
+from .utils.urls import is_atlassian_cloud_url
 
 # Configure logging
 logger = logging.getLogger("mcp-atlassian")
@@ -30,13 +35,13 @@ def get_available_services() -> dict[str, bool | None]:
     """Determine which services are available based on environment variables."""
 
     # Check for either cloud authentication (URL + username + API token)
-    # or server/data center authentication (URL + personal token)
+    # or server/data center authentication (URL + ( personal token or username + API token ))
     confluence_url = os.getenv("CONFLUENCE_URL")
     if confluence_url:
         is_cloud = is_atlassian_cloud_url(confluence_url)
 
         if is_cloud:
-            confluence_vars = all(
+            confluence_is_setup = all(
                 [
                     confluence_url,
                     os.getenv("CONFLUENCE_USERNAME"),
@@ -45,12 +50,20 @@ def get_available_services() -> dict[str, bool | None]:
             )
             logger.info("Using Confluence Cloud authentication method")
         else:
-            confluence_vars = all(
-                [confluence_url, os.getenv("CONFLUENCE_PERSONAL_TOKEN")]
+            confluence_is_setup = all(
+                [
+                    confluence_url,
+                    os.getenv("CONFLUENCE_PERSONAL_TOKEN")
+                    # Some on prem/data center use username and api token too.
+                    or (
+                        os.getenv("CONFLUENCE_USERNAME")
+                        and os.getenv("CONFLUENCE_API_TOKEN")
+                    ),
+                ]
             )
             logger.info("Using Confluence Server/Data Center authentication method")
     else:
-        confluence_vars = False
+        confluence_is_setup = False
 
     # Check for either cloud authentication (URL + username + API token)
     # or server/data center authentication (URL + personal token)
@@ -59,17 +72,17 @@ def get_available_services() -> dict[str, bool | None]:
         is_cloud = is_atlassian_cloud_url(jira_url)
 
         if is_cloud:
-            jira_vars = all(
+            jira_is_setup = all(
                 [jira_url, os.getenv("JIRA_USERNAME"), os.getenv("JIRA_API_TOKEN")]
             )
             logger.info("Using Jira Cloud authentication method")
         else:
-            jira_vars = all([jira_url, os.getenv("JIRA_PERSONAL_TOKEN")])
+            jira_is_setup = all([jira_url, os.getenv("JIRA_PERSONAL_TOKEN")])
             logger.info("Using Jira Server/Data Center authentication method")
     else:
-        jira_vars = False
+        jira_is_setup = False
 
-    return {"confluence": confluence_vars, "jira": jira_vars}
+    return {"confluence": confluence_is_setup, "jira": jira_is_setup}
 
 
 @asynccontextmanager
@@ -148,8 +161,13 @@ async def list_resources() -> list[Resource]:
             # Get current user's account ID
             account_id = ctx.jira.get_current_user_account_id()
 
-            # Use JQL to find issues the user is assigned to or reported
-            jql = f"assignee = {account_id} OR reporter = {account_id} ORDER BY updated DESC"
+            # Escape the account ID for safe JQL insertion
+            escaped_account_id = escape_jql_string(account_id)
+
+            # Use JQL to find issues the user is assigned to or reported, using the escaped ID
+            # Note: We use the escaped_account_id directly, as it already includes the necessary quotes.
+            jql = f"assignee = {escaped_account_id} OR reporter = {escaped_account_id} ORDER BY updated DESC"
+            logger.debug(f"Executing JQL for list_resources: {jql}")
             issues = ctx.jira.jira.jql(jql, limit=250, fields=["project"])
 
             # Extract and deduplicate projects
@@ -179,33 +197,35 @@ async def list_resources() -> list[Resource]:
                 ]
             )
         except Exception as e:
-            logger.error(f"Error fetching Jira projects: {str(e)}")
+            logger.error(f"Error fetching Jira projects: {e}", exc_info=True)
 
     return resources
 
 
 @app.read_resource()
-async def read_resource(uri: str) -> tuple[str, str]:
+async def read_resource(uri: AnyUrl) -> str:
     """Read content from Confluence based on the resource URI."""
-    parsed_uri = urlparse(uri)
 
     # Get application context
     ctx = app.request_context.lifespan_context
 
     # Handle Confluence resources
-    if uri.startswith("confluence://"):
+    if str(uri).startswith("confluence://"):
         if not ctx or not ctx.confluence:
             raise ValueError(
                 "Confluence is not configured. Please provide Confluence credentials."
             )
-        parts = uri.replace("confluence://", "").split("/")
+        parts = str(uri).replace("confluence://", "").split("/")
 
         # Handle space listing
         if len(parts) == 1:
             space_key = parts[0]
 
+            # Apply the fix here - properly quote the space key
+            quoted_space_key = quote_cql_identifier_if_needed(space_key)
+
             # Use CQL to find recently updated pages in this space
-            cql = f'space = "{space_key}" AND contributor = currentUser() ORDER BY lastmodified DESC'
+            cql = f"space = {quoted_space_key} AND contributor = currentUser() ORDER BY lastmodified DESC"
             pages = ctx.confluence.search(cql=cql, limit=20)
 
             if not pages:
@@ -220,7 +240,7 @@ async def read_resource(uri: str) -> tuple[str, str]:
 
                 content.append(f"# [{title}]({url})\n\n{page.page_content}\n\n---")
 
-            return "\n\n".join(content), "text/markdown"
+            return "\n\n".join(content)
 
         # Handle specific page
         elif len(parts) >= 3 and parts[1] == "pages":
@@ -231,13 +251,13 @@ async def read_resource(uri: str) -> tuple[str, str]:
             if not page:
                 raise ValueError(f"Page not found: {title}")
 
-            return page.page_content, "text/markdown"
+            return page.page_content
 
     # Handle Jira resources
-    elif uri.startswith("jira://"):
+    elif str(uri).startswith("jira://"):
         if not ctx or not ctx.jira:
             raise ValueError("Jira is not configured. Please provide Jira credentials.")
-        parts = uri.replace("jira://", "").split("/")
+        parts = str(uri).replace("jira://", "").split("/")
 
         # Handle project listing
         if len(parts) == 1:
@@ -272,7 +292,7 @@ async def read_resource(uri: str) -> tuple[str, str]:
 
                 content.append(f"{issue_content}---")
 
-            return "\n\n".join(content), "text/markdown"
+            return "\n\n".join(content)
 
         # Handle specific issue
         elif len(parts) >= 2:
@@ -292,7 +312,7 @@ async def read_resource(uri: str) -> tuple[str, str]:
             if issue_dict.get("description"):
                 markdown += f"{issue_dict.get('description')}\n\n"
 
-            return markdown, "text/markdown"
+            return markdown
 
     raise ValueError(f"Invalid resource URI: {uri}")
 
@@ -321,6 +341,7 @@ async def list_tools() -> list[Tool]:
                                 "type": "string",
                                 "description": "Search query - can be either a simple text (e.g. 'project documentation') or a CQL query string. Examples of CQL:\n"
                                 "- Basic search: 'type=page AND space=DEV'\n"
+                                "- Personal space search: 'space=\"~username\"' (note: personal space keys starting with ~ must be quoted)\n"
                                 "- Search by title: 'title~\"Meeting Notes\"'\n"
                                 "- Recent content: 'created >= \"2023-01-01\"'\n"
                                 "- Content with specific label: 'label=documentation'\n"
@@ -329,7 +350,8 @@ async def list_tools() -> list[Tool]:
                                 "- Content you contributed to recently: 'contributor = currentUser() AND lastModified > startOfWeek()'\n"
                                 "- Content watched by user: 'watcher = \"user@domain.com\" AND type = page'\n"
                                 '- Exact phrase in content: \'text ~ "\\"Urgent Review Required\\"" AND label = "pending-approval"\'\n'
-                                '- Title wildcards: \'title ~ "Minutes*" AND (space = "HR" OR space = "Marketing")\'\n',
+                                '- Title wildcards: \'title ~ "Minutes*" AND (space = "HR" OR space = "Marketing")\'\n'
+                                'Note: Special identifiers need proper quoting in CQL: personal space keys (e.g., "~username"), reserved words, numeric IDs, and identifiers with special characters.',
                             },
                             "limit": {
                                 "type": "number",
@@ -337,6 +359,10 @@ async def list_tools() -> list[Tool]:
                                 "default": 10,
                                 "minimum": 1,
                                 "maximum": 50,
+                            },
+                            "spaces_filter": {
+                                "type": "string",
+                                "description": "Comma-separated list of space keys to filter results by. Overrides the environment variable CONFLUENCE_SPACES_FILTER if provided.",
                             },
                         },
                         "required": ["query"],
@@ -512,6 +538,29 @@ async def list_tools() -> list[Tool]:
                             "required": ["page_id"],
                         },
                     ),
+                    Tool(
+                        name="confluence_attach_content",
+                        description="Attach content to a Confluence page",
+                        inputSchema={
+                            "type": "object",
+                            "properties": {
+                                "content": {
+                                    "type": "string",
+                                    "format": "binary",
+                                    "description": "The content to attach (bytes)",
+                                },
+                                "name": {
+                                    "type": "string",
+                                    "description": "The name of the attachment",
+                                },
+                                "page_id": {
+                                    "type": "string",
+                                    "description": "The ID of the page to attach the content to",
+                                },
+                            },
+                            "required": ["content", "name", "page_id"],
+                        },
+                    ),
                 ]
             )
 
@@ -530,6 +579,11 @@ async def list_tools() -> list[Tool]:
                                 "type": "string",
                                 "description": "Jira issue key (e.g., 'PROJ-123')",
                             },
+                            "fields": {
+                                "type": "string",
+                                "description": "Fields to return. Can be a comma-separated list (e.g., 'summary,status,customfield_10010'), '*all' for all fields (including custom fields), or omitted for essential fields only",
+                                "default": "summary,description,status,assignee,reporter,labels,priority,created,updated,issuetype",
+                            },
                             "expand": {
                                 "type": "string",
                                 "description": (
@@ -547,7 +601,17 @@ async def list_tools() -> list[Tool]:
                                 ),
                                 "minimum": 0,
                                 "maximum": 100,
+                                "default": 10,
+                            },
+                            "properties": {
+                                "type": "string",
+                                "description": "A comma-separated list of issue properties to return",
                                 "default": None,
+                            },
+                            "update_history": {
+                                "type": "boolean",
+                                "description": "Whether to update the issue view history for the requesting user",
+                                "default": True,
                             },
                         },
                         "required": ["issue_key"],
@@ -577,7 +641,7 @@ async def list_tools() -> list[Tool]:
                                     "Use '*all' for all fields, or specify individual "
                                     "fields like 'summary,status,assignee,priority'"
                                 ),
-                                "default": "*all",
+                                "default": "summary,description,status,assignee,reporter,labels,priority,created,updated,issuetype",
                             },
                             "limit": {
                                 "type": "number",
@@ -585,6 +649,16 @@ async def list_tools() -> list[Tool]:
                                 "default": 10,
                                 "minimum": 1,
                                 "maximum": 50,
+                            },
+                            "startAt": {
+                                "type": "number",
+                                "description": "Starting index for pagination (0-based)",
+                                "default": 0,
+                                "minimum": 0,
+                            },
+                            "projects_filter": {
+                                "type": "string",
+                                "description": "Comma-separated list of project keys to filter results by. Overrides the environment variable JIRA_PROJECTS_FILTER if provided.",
                             },
                         },
                         "required": ["jql"],
@@ -607,6 +681,12 @@ async def list_tools() -> list[Tool]:
                                 "minimum": 1,
                                 "maximum": 50,
                             },
+                            "startAt": {
+                                "type": "number",
+                                "description": "Starting index for pagination (0-based)",
+                                "default": 0,
+                                "minimum": 0,
+                            },
                         },
                         "required": ["project_key"],
                     },
@@ -627,6 +707,12 @@ async def list_tools() -> list[Tool]:
                                 "default": 10,
                                 "minimum": 1,
                                 "maximum": 50,
+                            },
+                            "startAt": {
+                                "type": "number",
+                                "description": "Starting index for pagination (0-based)",
+                                "default": 0,
+                                "minimum": 0,
                             },
                         },
                         "required": ["epic_key"],
@@ -660,6 +746,172 @@ async def list_tools() -> list[Tool]:
                         "required": ["issue_key"],
                     },
                 ),
+                Tool(
+                    name="jira_download_attachments",
+                    description="Download attachments from a Jira issue",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "issue_key": {
+                                "type": "string",
+                                "description": "Jira issue key (e.g., 'PROJ-123')",
+                            },
+                            "target_dir": {
+                                "type": "string",
+                                "description": "Directory where attachments should be saved",
+                            },
+                        },
+                        "required": ["issue_key", "target_dir"],
+                    },
+                ),
+                Tool(
+                    name="jira_get_agile_boards",
+                    description="Get jira agile boards by name, project key, or type",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "board_name": {
+                                "type": "string",
+                                "description": "The name of board, support fuzzy search",
+                            },
+                            "project_key": {
+                                "type": "string",
+                                "description": "Jira project key (e.g., 'PROJ-123')",
+                            },
+                            "board_type": {
+                                "type": "string",
+                                "description": "The type of jira board (e.g., 'scrum', 'kanban')",
+                            },
+                            "startAt": {
+                                "type": "number",
+                                "description": "Starting index for pagination (0-based)",
+                                "default": 0,
+                            },
+                            "limit": {
+                                "type": "number",
+                                "description": "Maximum number of results (1-50)",
+                                "default": 10,
+                                "minimum": 1,
+                                "maximum": 50,
+                            },
+                        },
+                    },
+                ),
+                Tool(
+                    name="jira_get_board_issues",
+                    description="Get all issues linked to a specific board",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "board_id": {
+                                "type": "string",
+                                "description": "The id of the board (e.g., '1001')",
+                            },
+                            "jql": {
+                                "type": "string",
+                                "description": "JQL query string (Jira Query Language). Examples:\n"
+                                '- Find Epics: "issuetype = Epic AND project = PROJ"\n'
+                                '- Find issues in Epic: "parent = PROJ-123"\n'
+                                "- Find by status: \"status = 'In Progress' AND project = PROJ\"\n"
+                                '- Find by assignee: "assignee = currentUser()"\n'
+                                '- Find recently updated: "updated >= -7d AND project = PROJ"\n'
+                                '- Find by label: "labels = frontend AND project = PROJ"\n'
+                                '- Find by priority: "priority = High AND project = PROJ"',
+                            },
+                            "fields": {
+                                "type": "string",
+                                "description": (
+                                    "Comma-separated fields to return in the results. "
+                                    "Use '*all' for all fields, or specify individual "
+                                    "fields like 'summary,status,assignee,priority'"
+                                ),
+                                "default": "*all",
+                            },
+                            "startAt": {
+                                "type": "number",
+                                "description": "Starting index for pagination (0-based)",
+                                "default": 0,
+                            },
+                            "limit": {
+                                "type": "number",
+                                "description": "Maximum number of results (1-50)",
+                                "default": 10,
+                                "minimum": 1,
+                                "maximum": 50,
+                            },
+                            "expand": {
+                                "type": "string",
+                                "description": "Fields to expand in the response (e.g., 'version', 'body.storage')",
+                                "default": "version",
+                            },
+                        },
+                        "required": ["board_id", "jql"],
+                    },
+                ),
+                Tool(
+                    name="jira_get_sprints_from_board",
+                    description="Get jira sprints from board by state",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "board_id": {
+                                "type": "string",
+                                "description": "The id of board (e.g., '1000')",
+                            },
+                            "state": {
+                                "type": "string",
+                                "description": "Sprint state (e.g., 'active', 'future', 'closed')",
+                            },
+                            "startAt": {
+                                "type": "number",
+                                "description": "Starting index for pagination (0-based)",
+                                "default": 0,
+                            },
+                            "limit": {
+                                "type": "number",
+                                "description": "Maximum number of results (1-50)",
+                                "default": 10,
+                                "minimum": 1,
+                                "maximum": 50,
+                            },
+                        },
+                    },
+                ),
+                Tool(
+                    name="jira_get_sprint_issues",
+                    description="Get jira issues from sprint",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "sprint_id": {
+                                "type": "string",
+                                "description": "The id of sprint (e.g., '10001')",
+                            },
+                            "fields": {
+                                "type": "string",
+                                "description": (
+                                    "Comma-separated fields to return in the results. "
+                                    "Use '*all' for all fields, or specify individual "
+                                    "fields like 'summary,status,assignee,priority'"
+                                ),
+                                "default": "*all",
+                            },
+                            "startAt": {
+                                "type": "number",
+                                "description": "Starting index for pagination (0-based)",
+                                "default": 0,
+                            },
+                            "limit": {
+                                "type": "number",
+                                "description": "Maximum number of results (1-50)",
+                                "default": 10,
+                                "minimum": 1,
+                                "maximum": 50,
+                            },
+                        },
+                        "required": ["sprint_id"],
+                    },
+                ),
             ]
         )
 
@@ -675,9 +927,11 @@ async def list_tools() -> list[Tool]:
                             "properties": {
                                 "project_key": {
                                     "type": "string",
-                                    "description": "The JIRA project key (e.g. 'PROJ', 'DEV', 'SUPPORT'). "
-                                    "This is the prefix of issue keys in your project. "
-                                    "Never assume what it might be, always ask the user.",
+                                    "description": (
+                                        "The JIRA project key (e.g. 'PROJ', 'DEV', 'SUPPORT'). "
+                                        "This is the prefix of issue keys in your project. "
+                                        "Never assume what it might be, always ask the user."
+                                    ),
                                 },
                                 "summary": {
                                     "type": "string",
@@ -694,21 +948,29 @@ async def list_tools() -> list[Tool]:
                                 "assignee": {
                                     "type": "string",
                                     "description": "Assignee of the ticket (accountID, full name or e-mail)",
+                                    "default": None,
                                 },
                                 "description": {
                                     "type": "string",
                                     "description": "Issue description",
                                     "default": "",
                                 },
+                                "components": {
+                                    "type": "string",
+                                    "description": "Comma-separated list of component names to assign (e.g., 'Frontend,API')",
+                                    "default": "",
+                                },
                                 "additional_fields": {
                                     "type": "string",
-                                    "description": "Optional JSON string of additional fields to set. "
-                                    "Examples:\n"
-                                    '- Set priority: {"priority": {"name": "High"}}\n'
-                                    '- Add labels: {"labels": ["frontend", "urgent"]}\n'
-                                    '- Add components: {"components": [{"name": "UI"}]}\n'
-                                    '- Link to parent (for any issue type): {"parent": "PROJ-123"}\n'
-                                    '- Custom fields: {"customfield_10010": "value"}',
+                                    "description": (
+                                        "Optional JSON string of additional fields to set. "
+                                        "Examples:\n"
+                                        '- Set priority: {"priority": {"name": "High"}}\n'
+                                        '- Add labels: {"labels": ["frontend", "urgent"]}\n'
+                                        '- Link to parent (for any issue type): {"parent": "PROJ-123"}\n'
+                                        '- Set Fix Version/s: {"fixVersions": [{"id": "10020"}]}\n'
+                                        '- Custom fields: {"customfield_10010": "value"}'
+                                    ),
                                     "default": "{}",
                                 },
                             },
@@ -727,14 +989,21 @@ async def list_tools() -> list[Tool]:
                                 },
                                 "fields": {
                                     "type": "string",
-                                    "description": "A valid JSON object of fields to update as a string. "
-                                    'Example: \'{"summary": "New title", "description": "Updated description", '
-                                    '"priority": {"name": "High"}, "assignee": {"name": "john.doe"}}\'',
+                                    "description": (
+                                        "A valid JSON object of fields to update as a string. "
+                                        'Example: \'{"summary": "New title", "description": "Updated description", '
+                                        '"priority": {"name": "High"}, "assignee": {"name": "john.doe"}}\''
+                                    ),
                                 },
                                 "additional_fields": {
                                     "type": "string",
                                     "description": "Optional JSON string of additional fields to update. Use this for custom fields or more complex updates.",
                                     "default": "{}",
+                                },
+                                "attachments": {
+                                    "type": "string",
+                                    "description": "Optional JSON string or comma-separated list of file paths to attach to the issue. "
+                                    'Example: "/path/to/file1.txt,/path/to/file2.txt" or "["/path/to/file1.txt","/path/to/file2.txt"]"',
                                 },
                             },
                             "required": ["issue_key", "fields"],
@@ -879,9 +1148,10 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
 
     try:
         # Helper functions for formatting results
-        def format_comment(comment: Any) -> dict:
+        def format_comment(comment: Any) -> dict[str, Any]:
             if hasattr(comment, "to_simplified_dict"):
-                return comment.to_simplified_dict()
+                # Cast the return value to dict[str, Any] to satisfy the type checker
+                return cast(dict[str, Any], comment.to_simplified_dict())
             return {
                 "id": comment.get("id"),
                 "author": comment.get("author", {}).get("displayName", "Unknown"),
@@ -896,6 +1166,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
 
             query = arguments.get("query", "")
             limit = min(int(arguments.get("limit", 10)), 50)
+            spaces_filter = arguments.get("spaces_filter")
 
             # Check if the query is a simple search term or already a CQL query
             if query and not any(
@@ -907,7 +1178,9 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 query = f'text ~ "{query}"'
                 logger.info(f"Converting simple search term to CQL: {query}")
 
-            pages = ctx.confluence.search(query, limit=limit)
+            pages = ctx.confluence.search(
+                query, limit=limit, spaces_filter=spaces_filter
+            )
 
             # Format results using the to_simplified_dict method
             search_results = [page.to_simplified_dict() for page in pages]
@@ -955,30 +1228,46 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
             expand = arguments.get("expand", "version")
             limit = min(int(arguments.get("limit", 25)), 50)
             include_content = arguments.get("include_content", False)
+            convert_to_markdown = arguments.get("convert_to_markdown", True)
+            start = arguments.get("start", 0)
 
             # Add body.storage to expand if content is requested
             if include_content and "body" not in expand:
-                expand = f"{expand},body.storage"
+                expand = f"{expand},body.storage" if expand else "body.storage"
 
-            # Get the child pages
-            pages = ctx.confluence.get_page_children(
-                page_id=parent_id, expand=expand, limit=limit, convert_to_markdown=True
-            )
+            pages = None  # Initialize pages to None before try block
 
-            # Format results using the to_simplified_dict method
-            child_pages = [page.to_simplified_dict() for page in pages]
+            try:
+                pages = ctx.confluence.get_page_children(
+                    page_id=parent_id,
+                    start=start,
+                    limit=limit,
+                    expand=expand,
+                    convert_to_markdown=convert_to_markdown,
+                )
 
-            # Return the formatted results
+                child_pages = [page.to_simplified_dict() for page in pages]
+
+                result = {
+                    "parent_id": parent_id,
+                    "total": len(child_pages),
+                    "limit": limit,
+                    "results": child_pages,
+                }
+
+            except Exception as e:
+                # --- Error Handling ---
+                logger.error(
+                    f"Error getting/processing children for page ID {parent_id}: {e}",
+                    exc_info=True,
+                )
+                result = {"error": f"Failed to get child pages: {e}"}
+
             return [
                 TextContent(
                     type="text",
                     text=json.dumps(
-                        {
-                            "parent_id": parent_id,
-                            "total": len(child_pages),
-                            "limit": limit,
-                            "results": child_pages,
-                        },
+                        result,
                         indent=2,
                         ensure_ascii=False,
                     ),
@@ -1155,17 +1444,82 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                     )
                 ]
 
+        elif name == "confluence_attach_content":
+            if not ctx or not ctx.confluence:
+                raise ValueError("Confluence is not configured.")
+
+            # Write operation - check read-only mode
+            if read_only:
+                return [
+                    TextContent(
+                        "Operation 'confluence_attach_content' is not available in read-only mode."
+                    )
+                ]
+
+            content = arguments.get("content")
+            name = arguments.get("name")
+            page_id = arguments.get("page_id")
+
+            if not content or not name or not page_id:
+                return [
+                    TextContent(
+                        type="text",
+                        text="Error: Missing required parameters: content, name, and page_id are required.",
+                    )
+                ]
+
+            try:
+                page = ctx.confluence.attach_content(
+                    content=content, name=name, page_id=page_id
+                )
+                page_data = page.to_simplified_dict()
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(
+                            page_data,
+                            indent=2,
+                            ensure_ascii=False,
+                        ),
+                    )
+                ]
+            except ApiError as e:
+                return [
+                    TextContent(
+                        type="text",
+                        text=f"Confluence API Error when trying to attach content {name} to page {page_id}: {str(e)}",
+                    )
+                ]
+            except RequestException as e:
+                return [
+                    TextContent(
+                        type="text",
+                        text=f"Network error when trying to attach content {name} to page {page_id}: {str(e)}",
+                    )
+                ]
+
         # Jira operations
         elif name == "jira_get_issue" and ctx and ctx.jira:
             if not ctx or not ctx.jira:
                 raise ValueError("Jira is not configured.")
 
             issue_key = arguments.get("issue_key")
+            fields = arguments.get(
+                "fields",
+                "summary,description,status,assignee,reporter,labels,priority,created,updated,issuetype",
+            )
             expand = arguments.get("expand")
-            comment_limit = arguments.get("comment_limit")
+            comment_limit = arguments.get("comment_limit", 10)
+            properties = arguments.get("properties")
+            update_history = arguments.get("update_history", True)
 
             issue = ctx.jira.get_issue(
-                issue_key, expand=expand, comment_limit=comment_limit
+                issue_key,
+                fields=fields,
+                expand=expand,
+                comment_limit=comment_limit,
+                properties=properties,
+                update_history=update_history,
             )
 
             result = {"content": issue.to_simplified_dict()}
@@ -1181,18 +1535,37 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 raise ValueError("Jira is not configured.")
 
             jql = arguments.get("jql")
-            fields = arguments.get("fields", "*all")
+            fields = arguments.get(
+                "fields",
+                "summary,description,status,assignee,reporter,labels,priority,created,updated,issuetype",
+            )
             limit = min(int(arguments.get("limit", 10)), 50)
+            projects_filter = arguments.get("projects_filter")
+            start_at = int(arguments.get("startAt", 0))  # Get startAt
 
-            issues = ctx.jira.search_issues(jql, fields=fields, limit=limit)
+            search_result = ctx.jira.search_issues(
+                jql,
+                fields=fields,
+                limit=limit,
+                start=start_at,  # Pass start_at here
+                projects_filter=projects_filter,
+            )
 
             # Format results using the to_simplified_dict method
-            search_results = [issue.to_simplified_dict() for issue in issues]
+            issues = [issue.to_simplified_dict() for issue in search_result.issues]
+
+            # Include metadata in the response
+            response = {
+                "total": search_result.total,
+                "start_at": search_result.start_at,
+                "max_results": search_result.max_results,
+                "issues": issues,
+            }
 
             return [
                 TextContent(
                     type="text",
-                    text=json.dumps(search_results, indent=2, ensure_ascii=False),
+                    text=json.dumps(response, indent=2, ensure_ascii=False),
                 )
             ]
 
@@ -1202,16 +1575,27 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
 
             project_key = arguments.get("project_key")
             limit = min(int(arguments.get("limit", 10)), 50)
+            start_at = int(arguments.get("startAt", 0))  # Get startAt
 
-            issues = ctx.jira.get_project_issues(project_key, limit=limit)
+            search_result = ctx.jira.get_project_issues(
+                project_key, start=start_at, limit=limit
+            )
 
             # Format results
-            project_issues = [issue.to_simplified_dict() for issue in issues]
+            issues = [issue.to_simplified_dict() for issue in search_result.issues]
+
+            # Include metadata in the response
+            response = {
+                "total": search_result.total,
+                "start_at": search_result.start_at,
+                "max_results": search_result.max_results,
+                "issues": issues,
+            }
 
             return [
                 TextContent(
                     type="text",
-                    text=json.dumps(project_issues, indent=2, ensure_ascii=False),
+                    text=json.dumps(response, indent=2, ensure_ascii=False),
                 )
             ]
 
@@ -1221,17 +1605,28 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
 
             epic_key = arguments.get("epic_key")
             limit = min(int(arguments.get("limit", 10)), 50)
+            start_at = int(arguments.get("startAt", 0))  # Get startAt
 
             # Get issues linked to the epic
-            issues = ctx.jira.get_epic_issues(epic_key, limit=limit)
+            search_result = ctx.jira.get_epic_issues(
+                epic_key, start=start_at, limit=limit
+            )
 
             # Format results
-            epic_issues = [issue.to_simplified_dict() for issue in issues]
+            issues = [issue.to_simplified_dict() for issue in search_result.issues]
+
+            # Include metadata in the response
+            response = {
+                "total": search_result.total,
+                "start_at": search_result.start_at,
+                "max_results": search_result.max_results,
+                "issues": issues,
+            }
 
             return [
                 TextContent(
                     type="text",
-                    text=json.dumps(epic_issues, indent=2, ensure_ascii=False),
+                    text=json.dumps(response, indent=2, ensure_ascii=False),
                 )
             ]
 
@@ -1281,6 +1676,155 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 )
             ]
 
+        elif name == "jira_download_attachments" and ctx and ctx.jira:
+            if not ctx or not ctx.jira:
+                raise ValueError("Jira is not configured.")
+
+            issue_key = arguments.get("issue_key")
+            target_dir = arguments.get("target_dir")
+
+            if not issue_key:
+                raise ValueError("Missing required parameter: issue_key")
+            if not target_dir:
+                raise ValueError("Missing required parameter: target_dir")
+
+            # Download the attachments
+            result = ctx.jira.download_issue_attachments(
+                issue_key=issue_key, target_dir=target_dir
+            )
+
+            return [
+                TextContent(
+                    type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+                )
+            ]
+
+        elif name == "jira_get_agile_boards" and ctx and ctx.jira:
+            if not ctx or not ctx.jira:
+                raise ValueError("Jira is not configured.")
+
+            board_name = arguments.get("board_name")
+            project_key = arguments.get("project_key")
+            board_type = arguments.get("board_type")
+            start_at = int(arguments.get("startAt", 0))
+            limit = min(int(arguments.get("limit", 10)), 50)
+
+            boards = ctx.jira.get_all_agile_boards_model(
+                board_name=board_name,
+                project_key=project_key,
+                board_type=board_type,
+                start=start_at,
+                limit=limit,
+            )
+
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(
+                        [board.to_simplified_dict() for board in boards],
+                        indent=2,
+                        ensure_ascii=False,
+                    ),
+                )
+            ]
+
+        elif name == "jira_get_board_issues" and ctx and ctx.jira:
+            if not ctx or not ctx.jira:
+                raise ValueError("Jira is not configured.")
+
+            board_id = arguments.get("board_id")
+            jql = arguments.get("jql")
+            fields = arguments.get("fields", "*all")
+
+            start_at = int(arguments.get("startAt", 0))
+            limit = min(int(arguments.get("limit", 10)), 50)
+            expand = arguments.get("expand", "version")
+
+            search_result = ctx.jira.get_board_issues(
+                board_id=board_id,
+                jql=jql,
+                fields=fields,
+                start=start_at,
+                limit=limit,
+                expand=expand,
+            )
+
+            # Format results
+            issues = [issue.to_simplified_dict() for issue in search_result.issues]
+
+            # Include metadata in the response
+            response = {
+                "total": search_result.total,
+                "start_at": search_result.start_at,
+                "max_results": search_result.max_results,
+                "issues": issues,
+            }
+
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(response, indent=2, ensure_ascii=False),
+                )
+            ]
+
+        elif name == "jira_get_sprints_from_board" and ctx and ctx.jira:
+            if not ctx or not ctx.jira:
+                raise ValueError("Jira is not configured.")
+
+            board_id = arguments.get("board_id")
+            state = arguments.get("state", "active")
+            start_at = int(arguments.get("startAt", 0))
+            limit = min(int(arguments.get("limit", 10)), 50)
+
+            sprints = ctx.jira.get_all_sprints_from_board_model(
+                board_id=board_id, state=state, start=start_at, limit=limit
+            )
+
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(
+                        [sprint.to_simplified_dict() for sprint in sprints],
+                        indent=2,
+                        ensure_ascii=False,
+                    ),
+                )
+            ]
+
+        elif name == "jira_get_sprint_issues" and ctx and ctx.jira:
+            if not ctx or not ctx.jira:
+                raise ValueError("Jira is not configured.")
+
+            sprint_id = arguments.get("sprint_id")
+            fields = arguments.get("fields", "*all")
+            start_at = int(arguments.get("startAt", 0))
+            limit = min(int(arguments.get("limit", 10)), 50)
+
+            search_result = ctx.jira.get_sprint_issues(
+                sprint_id=sprint_id,
+                fields=fields,
+                start=start_at,
+                limit=limit,
+            )
+
+            # Format results
+            issues = [issue.to_simplified_dict() for issue in search_result.issues]
+
+            # Include metadata in the response
+            response = {
+                "total": search_result.total,
+                "start_at": search_result.start_at,
+                "max_results": search_result.max_results,
+                "issues": issues,
+            }
+
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(response, indent=2, ensure_ascii=False),
+                )
+            ]
+
         elif name == "jira_create_issue":
             if not ctx or not ctx.jira:
                 raise ValueError("Jira is not configured.")
@@ -1301,6 +1845,14 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
             # Extract optional arguments
             description = arguments.get("description", "")
             assignee = arguments.get("assignee")
+            components = arguments.get("components")
+
+            # Parse components from comma-separated string to list
+            if components and isinstance(components, str):
+                # Split by comma and strip whitespace, removing empty entries
+                components = [
+                    comp.strip() for comp in components.split(",") if comp.strip()
+                ]
 
             # Parse additional fields
             additional_fields = {}
@@ -1317,6 +1869,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 issue_type=issue_type,
                 description=description,
                 assignee=assignee,
+                components=components,
                 **additional_fields,
             )
 
@@ -1360,7 +1913,45 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 except json.JSONDecodeError:
                     raise ValueError("Invalid JSON in additional_fields")
 
+            # Handle attachments if provided
+            attachments = []
+            if arguments.get("attachments"):
+                # Parse attachments - can be a single string or a list of strings
+                if isinstance(arguments.get("attachments"), str):
+                    try:
+                        # Try to parse as JSON array
+                        parsed_attachments = json.loads(arguments.get("attachments"))
+                        if isinstance(parsed_attachments, list):
+                            attachments = parsed_attachments
+                        else:
+                            # Single file path as a JSON string
+                            attachments = [parsed_attachments]
+                    except json.JSONDecodeError:
+                        # Handle non-JSON string formats
+                        if "," in arguments.get("attachments"):
+                            # Split by comma and strip whitespace (supporting comma-separated list format)
+                            attachments = [
+                                path.strip()
+                                for path in arguments.get("attachments").split(",")
+                            ]
+                        else:
+                            # Plain string - single file path
+                            attachments = [arguments.get("attachments")]
+                elif isinstance(arguments.get("attachments"), list):
+                    # Already a list
+                    attachments = arguments.get("attachments")
+
+                # Validate all paths exist
+                for path in attachments[:]:
+                    if not os.path.exists(path):
+                        logger.warning(f"Attachment file not found: {path}")
+                        attachments.remove(path)
+
             try:
+                # Add attachments to additional_fields if any valid paths were found
+                if attachments:
+                    additional_fields["attachments"] = attachments
+
                 # Update the issue - directly pass fields to JiraFetcher.update_issue
                 # instead of using fields as a parameter name
                 issue = ctx.jira.update_issue(
@@ -1368,6 +1959,15 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 )
 
                 result = issue.to_simplified_dict()
+
+                # Include attachment results if available
+                if (
+                    hasattr(issue, "custom_fields")
+                    and "attachment_results" in issue.custom_fields
+                ):
+                    result["attachment_results"] = issue.custom_fields[
+                        "attachment_results"
+                    ]
 
                 return [
                     TextContent(
@@ -1462,7 +2062,8 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
 
             return [
                 TextContent(
-                    type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+                    type="text",
+                    text=json.dumps(result, indent=2, ensure_ascii=False),
                 )
             ]
 

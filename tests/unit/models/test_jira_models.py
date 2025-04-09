@@ -18,6 +18,7 @@ from src.mcp_atlassian.models.jira import (
     JiraSearchResult,
     JiraStatus,
     JiraStatusCategory,
+    JiraTimetracking,
     JiraTransition,
     JiraUser,
     JiraWorklog,
@@ -349,6 +350,70 @@ class TestJiraComment:
         assert simplified["author"] == "Comment User"
 
 
+class TestJiraTimetracking:
+    """Tests for the JiraTimetracking model."""
+
+    def test_from_api_response_with_valid_data(self):
+        """Test creating a JiraTimetracking from valid API data."""
+        data = {
+            "originalEstimate": "2h",
+            "remainingEstimate": "1h 30m",
+            "timeSpent": "30m",
+            "originalEstimateSeconds": 7200,
+            "remainingEstimateSeconds": 5400,
+            "timeSpentSeconds": 1800,
+        }
+
+        timetracking = JiraTimetracking.from_api_response(data)
+
+        assert timetracking.original_estimate == "2h"
+        assert timetracking.remaining_estimate == "1h 30m"
+        assert timetracking.time_spent == "30m"
+        assert timetracking.original_estimate_seconds == 7200
+        assert timetracking.remaining_estimate_seconds == 5400
+        assert timetracking.time_spent_seconds == 1800
+
+    def test_from_api_response_with_empty_data(self):
+        """Test creating a JiraTimetracking from empty data."""
+        timetracking = JiraTimetracking.from_api_response({})
+
+        # Should use default values
+        assert timetracking.original_estimate is None
+        assert timetracking.remaining_estimate is None
+        assert timetracking.time_spent is None
+        assert timetracking.original_estimate_seconds is None
+        assert timetracking.remaining_estimate_seconds is None
+        assert timetracking.time_spent_seconds is None
+
+    def test_from_api_response_with_none_data(self):
+        """Test creating a JiraTimetracking from None data."""
+        timetracking = JiraTimetracking.from_api_response(None)
+
+        # Should return None
+        assert timetracking is None
+
+    def test_to_simplified_dict(self):
+        """Test converting JiraTimetracking to a simplified dictionary."""
+        timetracking = JiraTimetracking(
+            original_estimate="2h",
+            remaining_estimate="1h 30m",
+            time_spent="30m",
+            original_estimate_seconds=7200,
+            remaining_estimate_seconds=5400,
+            time_spent_seconds=1800,
+        )
+
+        simplified = timetracking.to_simplified_dict()
+
+        assert isinstance(simplified, dict)
+        assert simplified["originalEstimate"] == "2h"
+        assert simplified["remainingEstimate"] == "1h 30m"
+        assert simplified["timeSpent"] == "30m"
+        assert simplified["originalEstimateSeconds"] == 7200
+        assert simplified["remainingEstimateSeconds"] == 5400
+        assert simplified["timeSpentSeconds"] == 1800
+
+
 class TestJiraIssue:
     """Tests for the JiraIssue model."""
 
@@ -598,18 +663,12 @@ class TestJiraIssue:
         elif isinstance(simplified["status"], dict):
             assert simplified["status"]["name"] == "In Progress"
 
-        # Check issue type - could be under "type" or "issue_type"
-        assert "type" in simplified or "issue_type" in simplified
-        if "type" in simplified:
-            if isinstance(simplified["type"], str):
-                assert simplified["type"] == "Task"
-            elif isinstance(simplified["type"], dict):
-                assert simplified["type"]["name"] == "Task"
-        elif "issue_type" in simplified:
-            if isinstance(simplified["issue_type"], str):
-                assert simplified["issue_type"] == "Task"
-            elif isinstance(simplified["issue_type"], dict):
-                assert simplified["issue_type"]["name"] == "Task"
+        # Check issue type - should be under "issuetype" in the default fields
+        assert "issuetype" in simplified
+        if isinstance(simplified["issuetype"], str):
+            assert simplified["issuetype"] == "Task"
+        elif isinstance(simplified["issuetype"], dict):
+            assert simplified["issuetype"]["name"] == "Task"
 
         # Check priority
         assert "priority" in simplified
@@ -622,10 +681,167 @@ class TestJiraIssue:
         assert "assignee" in simplified
         assert "reporter" in simplified
 
-        # Check that arrays are included
+        # Test with "*all" to get all fields
+        issue = JiraIssue.from_api_response(jira_issue_data, requested_fields="*all")
+        simplified = issue.to_simplified_dict()
+
+        # Check that arrays are included with "*all"
         assert "labels" in simplified
         assert "comments" in simplified
         assert len(simplified["comments"]) > 0
+
+    def test_jira_issue_with_custom_fields(self):
+        """Test JiraIssue handling of custom fields."""
+        # Create test data with custom fields
+        issue_data = {
+            "id": "10001",
+            "key": "TEST-123",
+            "fields": {
+                "summary": "Test issue",
+                "customfield_10001": "Simple string value",
+                "customfield_10002": {"value": "Option value"},
+                "customfield_10003": [{"value": "Item 1"}, {"value": "Item 2"}],
+            },
+        }
+
+        # Test with no requested fields (should include only essential fields)
+        issue = JiraIssue.from_api_response(issue_data)
+        simplified = issue.to_simplified_dict()
+
+        # Check standard fields
+        assert simplified["key"] == "TEST-123"
+        assert simplified["summary"] == "Test issue"
+
+        # Check custom fields not included by default
+        assert "customfield_10001" not in simplified
+        assert "customfield_10002" not in simplified
+        assert "customfield_10003" not in simplified
+
+        # Test with specific requested fields as string
+        issue = JiraIssue.from_api_response(
+            issue_data, requested_fields="summary,customfield_10001"
+        )
+        simplified = issue.to_simplified_dict()
+
+        # Check only requested fields are included
+        assert "key" in simplified  # key is always included
+        assert "summary" in simplified
+        assert "customfield_10001" in simplified
+        assert "customfield_10002" not in simplified
+
+        # Test with specific requested fields as list
+        issue = JiraIssue.from_api_response(
+            issue_data, requested_fields=["key", "customfield_10002"]
+        )
+        simplified = issue.to_simplified_dict()
+
+        # Check only requested fields are included (plus key which is always included)
+        assert "key" in simplified
+        assert "customfield_10002" in simplified
+        assert "summary" not in simplified
+        assert "customfield_10001" not in simplified
+
+        # Test with *all as requested field
+        issue = JiraIssue.from_api_response(issue_data, requested_fields="*all")
+        simplified = issue.to_simplified_dict()
+
+        # Check all fields are included
+        assert "key" in simplified
+        assert "summary" in simplified
+        assert "customfield_10001" in simplified
+        assert "customfield_10002" in simplified
+        assert "customfield_10003" in simplified
+
+    def test_jira_issue_with_default_fields(self):
+        """Test that JiraIssue returns only essential fields by default."""
+        # Create test data with many fields
+        issue_data = {
+            "id": "10001",
+            "key": "TEST-123",
+            "fields": {
+                "summary": "Test issue",
+                "description": "Description",
+                "status": {"name": "Open"},
+                "assignee": {"displayName": "Test User"},
+                "reporter": {"displayName": "Reporter User"},
+                "priority": {"name": "Medium"},
+                "created": "2023-01-01T00:00:00.000+0000",
+                "updated": "2023-01-02T00:00:00.000+0000",
+                "issuetype": {"name": "Task"},
+                "customfield_10001": "Custom value",
+                "customfield_10002": {"value": "Option value"},
+            },
+        }
+
+        # Test with default (no requested_fields)
+        issue = JiraIssue.from_api_response(issue_data)
+        simplified = issue.to_simplified_dict()
+
+        # Should include essential fields
+        assert "key" in simplified
+        assert "summary" in simplified
+        assert "description" in simplified
+        assert "status" in simplified
+
+        # Should not include custom fields
+        assert "customfield_10001" not in simplified
+        assert "customfield_10002" not in simplified
+
+        # Test with "*all"
+        issue = JiraIssue.from_api_response(issue_data, requested_fields="*all")
+        simplified = issue.to_simplified_dict()
+
+        # Should include everything
+        assert "customfield_10001" in simplified
+        assert "customfield_10002" in simplified
+
+    def test_timetracking_field_processing(self):
+        """Test that timetracking data is properly processed."""
+        issue_data = {
+            "id": "10000",
+            "key": "TEST-123",
+            "fields": {
+                "summary": "Test Issue",
+                "description": "Test Description",
+                "timetracking": {
+                    "originalEstimate": "2h",
+                    "remainingEstimate": "1h 30m",
+                    "timeSpent": "30m",
+                    "originalEstimateSeconds": 7200,
+                    "remainingEstimateSeconds": 5400,
+                    "timeSpentSeconds": 1800,
+                },
+            },
+        }
+
+        issue = JiraIssue.from_api_response(issue_data)
+
+        # Verify timetracking field is populated
+        assert issue.timetracking is not None
+        assert issue.timetracking.original_estimate == "2h"
+        assert issue.timetracking.remaining_estimate == "1h 30m"
+        assert issue.timetracking.time_spent == "30m"
+        assert issue.timetracking.original_estimate_seconds == 7200
+        assert issue.timetracking.remaining_estimate_seconds == 5400
+        assert issue.timetracking.time_spent_seconds == 1800
+
+        # Verify timetracking is included in simplified dict with *all fields
+        issue.requested_fields = "*all"
+        simplified = issue.to_simplified_dict()
+        assert "timetracking" in simplified
+        assert simplified["timetracking"]["originalEstimate"] == "2h"
+        assert simplified["timetracking"]["remainingEstimate"] == "1h 30m"
+
+        # Verify timetracking is included when specifically requested
+        issue.requested_fields = ["summary", "timetracking"]
+        simplified = issue.to_simplified_dict()
+        assert "timetracking" in simplified
+        assert simplified["timetracking"]["originalEstimate"] == "2h"
+
+        # Verify timetracking is not included in default essential fields
+        issue.requested_fields = None
+        simplified = issue.to_simplified_dict()
+        assert "timetracking" not in simplified
 
 
 class TestJiraSearchResult:
