@@ -3,6 +3,9 @@
 ## [Unreleased]
 - added `jira_create_sprint`
 
+### Added
+- Added `get_issue_link_types()` method to retrieve all available issue link types
+
 ## [0.8.3] - 2025-04-24
 
 ### Removed
