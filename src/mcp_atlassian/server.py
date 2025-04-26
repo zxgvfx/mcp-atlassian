@@ -765,6 +765,41 @@ async def list_tools() -> list[Tool]:
                     },
                 ),
                 Tool(
+                    name="jira_create_sprint",
+                    description="Create Jira sprint for a board",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "board_id": {
+                                "type": "string",
+                                "description": "The id of board (e.g., '1000')",
+                            },
+                            "sprint_name": {
+                                "type": "string",
+                                "description": "Name of the sprint (e.g., 'Sprint 1')",
+                            },
+                            "start_date": {
+                                "type": "string",
+                                "description": "Start time for sprint (ISO 8601 format)",
+                            },
+                            "end_date": {
+                                "type": "string",
+                                "description": "End time for sprint (ISO 8601 format)",
+                            },
+                            "goal": {
+                                "type": "string",
+                                "description": "Goal of the sprint",
+                            },
+                        },
+                        "required": [
+                            "board_id",
+                            "sprint_name",
+                            "start_date",
+                            "end_date",
+                        ],
+                    },
+                ),
+                Tool(
                     name="jira_get_sprint_issues",
                     description="Get jira issues from sprint",
                     inputSchema={
@@ -1477,7 +1512,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 ]
 
         # Jira operations
-        elif name == "jira_get_issue" and ctx and ctx.jira:
+        elif name == "jira_get_issue":
             if not ctx or not ctx.jira:
                 raise ValueError("Jira is not configured.")
 
@@ -1508,7 +1543,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 )
             ]
 
-        elif name == "jira_search" and ctx and ctx.jira:
+        elif name == "jira_search":
             if not ctx or not ctx.jira:
                 raise ValueError("Jira is not configured.")
 
@@ -1593,7 +1628,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 )
             ]
 
-        elif name == "jira_get_epic_issues" and ctx and ctx.jira:
+        elif name == "jira_get_epic_issues":
             if not ctx or not ctx.jira:
                 raise ValueError("Jira is not configured.")
 
@@ -1624,7 +1659,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 )
             ]
 
-        elif name == "jira_get_transitions" and ctx and ctx.jira:
+        elif name == "jira_get_transitions":
             if not ctx or not ctx.jira:
                 raise ValueError("Jira is not configured.")
 
@@ -1653,7 +1688,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 )
             ]
 
-        elif name == "jira_get_worklog" and ctx and ctx.jira:
+        elif name == "jira_get_worklog":
             if not ctx or not ctx.jira:
                 raise ValueError("Jira is not configured.")
 
@@ -1670,7 +1705,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 )
             ]
 
-        elif name == "jira_download_attachments" and ctx and ctx.jira:
+        elif name == "jira_download_attachments":
             if not ctx or not ctx.jira:
                 raise ValueError("Jira is not configured.")
 
@@ -1693,7 +1728,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 )
             ]
 
-        elif name == "jira_get_agile_boards" and ctx and ctx.jira:
+        elif name == "jira_get_agile_boards":
             if not ctx or not ctx.jira:
                 raise ValueError("Jira is not configured.")
 
@@ -1722,7 +1757,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 )
             ]
 
-        elif name == "jira_get_board_issues" and ctx and ctx.jira:
+        elif name == "jira_get_board_issues":
             if not ctx or not ctx.jira:
                 raise ValueError("Jira is not configured.")
 
@@ -1761,7 +1796,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 )
             ]
 
-        elif name == "jira_get_sprints_from_board" and ctx and ctx.jira:
+        elif name == "jira_get_sprints_from_board":
             if not ctx or not ctx.jira:
                 raise ValueError("Jira is not configured.")
 
@@ -1785,7 +1820,34 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 )
             ]
 
-        elif name == "jira_get_sprint_issues" and ctx and ctx.jira:
+        elif name == "jira_create_sprint":
+            if not ctx or not ctx.jira:
+                raise ValueError("Jira is not configured.")
+
+            board_id = arguments.get("board_id")
+            sprint_name = arguments.get("sprint_name")
+            goal = arguments.get("goal")
+            start_date = arguments.get("start_date")
+            end_date = arguments.get("end_date")
+
+            sprint = ctx.jira.create_sprint(
+                board_id=board_id,
+                sprint_name=sprint_name,
+                goal=goal,
+                start_date=start_date,
+                end_date=end_date,
+            )
+
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(
+                        sprint.to_simplified_dict(), indent=2, ensure_ascii=False
+                    ),
+                )
+            ]
+
+        elif name == "jira_get_sprint_issues":
             if not ctx or not ctx.jira:
                 raise ValueError("Jira is not configured.")
 
