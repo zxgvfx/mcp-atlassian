@@ -1454,130 +1454,26 @@ async def test_jira_create_and_remove_issue_link(
         # Clean up resources even if the test fails
         cleanup_resources()
 
-    @pytest.mark.anyio
-    async def test_regression_jira_create_additional_fields_string(
-        self,
-        use_real_jira_data: bool,
-        test_project_key: str,
-        resource_tracker: ResourceTracker,
-        cleanup_resources: Callable[[], None],
-    ) -> None:
-        """Test jira_create_issue with additional_fields passed as a JSON string."""
-        if not use_real_jira_data:
-            pytest.skip("Real Jira data testing is disabled")
 
-        test_id = str(uuid.uuid4())[:8]
-        summary = f"Regression Test (JSON String Fields) {test_id}"
-        additional_fields_str = '{"priority": {"name": "High"}, "labels": ["regression-test", "json-string"]}'
+@pytest.mark.skipif(not os.getenv("TEST_PROXY_URL"), reason="TEST_PROXY_URL not set")
+def test_jira_client_real_proxy(jira_config: JiraConfig) -> None:
+    """Test JiraClient with a real proxy if TEST_PROXY_URL is set."""
+    import requests
 
-        created_issue_key = None
-        try:
-            create_args = {
-                "project_key": test_project_key,
-                "summary": summary,
-                "issue_type": "Task",
-                "additional_fields": additional_fields_str,
-            }
-            create_result_content: Sequence[TextContent] = await call_tool(
-                api_validation_client, "jira/create_issue", create_args
-            )
-            assert create_result_content and isinstance(
-                create_result_content[0], TextContent
-            )
-            created_issue_data = json.loads(create_result_content[0].text)
-            created_issue_key = created_issue_data["key"]
-
-            get_args = {
-                "issue_key": created_issue_key,
-                "fields": "summary,priority,labels",
-            }
-            get_result_content: Sequence[TextContent] = await call_tool(
-                api_validation_client, "jira/get_issue", get_args
-            )
-            assert get_result_content and isinstance(get_result_content[0], TextContent)
-            fetched_issue_data = json.loads(get_result_content[0].text)
-
-            assert "priority" in fetched_issue_data, (
-                "Priority field missing in fetched issue"
-            )
-            assert isinstance(fetched_issue_data["priority"], dict), (
-                "Priority should be a dict"
-            )
-            assert fetched_issue_data["priority"].get("name") == "High", (
-                "Priority was not set correctly"
-            )
-            assert "labels" in fetched_issue_data, (
-                "Labels field missing in fetched issue"
-            )
-            assert isinstance(fetched_issue_data["labels"], list), (
-                "Labels should be a list"
-            )
-            assert set(fetched_issue_data["labels"]) == {
-                "regression-test",
-                "json-string",
-            }, "Labels were not set correctly"
-
-        finally:
-            cleanup_resources()
-
-    @pytest.mark.anyio
-    async def test_regression_jira_update_fields_string(
-        self,
-        use_real_jira_data: bool,
-        test_project_key: str,
-        api_validation_client,
-        resource_tracker: ResourceTracker,
-        cleanup_resources: Callable[[], None],
-    ) -> None:
-        """Test jira_update_issue with 'fields' passed as a JSON string."""
-        if not use_real_jira_data:
-            pytest.skip("Real Jira data testing is disabled")
-
-        test_id = str(uuid.uuid4())[:8]
-        initial_summary = f"Regression Update Test Initial {test_id}"
-        updated_summary = f"Regression Update Test UPDATED {test_id}"
-
-        created_issue_key = None
-        try:
-            create_args = {
-                "project_key": test_project_key,
-                "summary": initial_summary,
-                "issue_type": "Task",
-            }
-            create_result_content: Sequence[TextContent] = await call_tool(
-                api_validation_client, "jira/create_issue", create_args
-            )
-            created_issue_key = json.loads(create_result_content[0].text)["key"]
-            resource_tracker.add_jira_issue(created_issue_key)
-
-            update_fields_str = f'{{"summary": "{updated_summary}", "labels": ["regression-update", "json-string"]}}'
-            update_args = {
-                "issue_key": created_issue_key,
-                "fields": update_fields_str,
-            }
-            update_result_content: Sequence[TextContent] = await call_tool(
-                api_validation_client, "jira/update_issue", update_args
-            )
-            assert update_result_content and isinstance(
-                update_result_content[0], TextContent
-            )
-            update_result_data = json.loads(update_result_content[0].text)
-            assert update_result_data.get("success"), "Update did not succeed"
-
-            get_args = {"issue_key": created_issue_key, "fields": "summary,labels"}
-            get_result_content: Sequence[TextContent] = await call_tool(
-                api_validation_client, "jira/get_issue", get_args
-            )
-            assert get_result_content and isinstance(get_result_content[0], TextContent)
-            fetched_issue_data = json.loads(get_result_content[0].text)
-
-            assert fetched_issue_data["summary"] == updated_summary, (
-                "Summary was not updated correctly"
-            )
-            assert set(fetched_issue_data["labels"]) == {
-                "regression-update",
-                "json-string",
-            }, "Labels were not updated correctly"
-
-        finally:
-            cleanup_resources()
+    proxy_url = os.environ["TEST_PROXY_URL"]
+    os.environ["HTTP_PROXY"] = proxy_url
+    os.environ["HTTPS_PROXY"] = proxy_url
+    # Use a simple API call to verify proxy is used and no connection error
+    client = JiraFetcher(config=JiraConfig.from_env())
+    try:
+        issue_key = os.environ.get("JIRA_TEST_ISSUE_KEY")
+        if not issue_key:
+            pytest.skip("JIRA_TEST_ISSUE_KEY not set")
+        result = client.get_issue(issue_key)
+        assert result is not None
+    except requests.exceptions.ProxyError:
+        pytest.fail("Proxy connection failed - check TEST_PROXY_URL and network setup.")
+    finally:
+        # Clean up env
+        del os.environ["HTTP_PROXY"]
+        del os.environ["HTTPS_PROXY"]

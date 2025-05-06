@@ -263,6 +263,47 @@ For Atlassian Cloud with OAuth 2.0:
 
 </details>
 
+<details>
+<summary>Proxy Configuration</summary>
+
+MCP Atlassian supports routing API requests through standard HTTP/HTTPS/SOCKS proxies. Configure using environment variables:
+
+- Supports standard `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `SOCKS_PROXY`.
+- Service-specific overrides are available (e.g., `JIRA_HTTPS_PROXY`, `CONFLUENCE_NO_PROXY`).
+- Service-specific variables override global ones for that service.
+
+Add the relevant proxy variables to the `args` (using `-e`) and `env` sections of your MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "mcp-atlassian": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e", "... existing Confluence/Jira vars",
+        "-e", "HTTP_PROXY",
+        "-e", "HTTPS_PROXY",
+        "-e", "NO_PROXY",
+        "ghcr.io/sooperset/mcp-atlassian:latest"
+      ],
+      "env": {
+        "... existing Confluence/Jira vars": "...",
+        "HTTP_PROXY": "http://proxy.internal:8080",
+        "HTTPS_PROXY": "http://proxy.internal:8080",
+        "NO_PROXY": "localhost,.your-company.com"
+      }
+    }
+  }
+}
+```
+
+Credentials in proxy URLs are masked in logs. If you set `NO_PROXY`, it will be respected for requests to matching hosts.
+
+</details>
+
 <details> <summary>Single Service Configurations</summary>
 
 **For Confluence Cloud only:**
@@ -390,6 +431,7 @@ For Jira Server/DC, use:
     }
     ```
 </details>
+
 
 ## Tools
 
