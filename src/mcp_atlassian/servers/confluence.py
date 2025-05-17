@@ -7,6 +7,8 @@ from typing import Annotated
 from fastmcp import Context, FastMCP
 from pydantic import Field
 
+from mcp_atlassian.servers.dependencies import get_confluence_fetcher
+
 from ..utils import convert_empty_defaults_to_none
 
 logger = logging.getLogger(__name__)
@@ -77,11 +79,7 @@ async def search(
     Returns:
         JSON string representing a list of simplified Confluence page objects.
     """
-    lifespan_ctx = ctx.request_context.lifespan_context
-    if not lifespan_ctx or not lifespan_ctx.confluence:
-        raise ValueError("Confluence client is not configured or available.")
-    confluence = lifespan_ctx.confluence
-
+    confluence_fetcher = await get_confluence_fetcher(ctx)
     # Check if the query is a simple search term or already a CQL query
     if query and not any(
         x in query for x in ["=", "~", ">", "<", " AND ", " OR ", "currentUser()"]
@@ -92,15 +90,20 @@ async def search(
             logger.info(
                 f"Converting simple search term to CQL using siteSearch: {query}"
             )
-            pages = confluence.search(query, limit=limit, spaces_filter=spaces_filter)
+            pages = confluence_fetcher.search(
+                query, limit=limit, spaces_filter=spaces_filter
+            )
         except Exception as e:
             logger.warning(f"siteSearch failed ('{e}'), falling back to text search.")
             query = f'text ~ "{original_query}"'
             logger.info(f"Falling back to text search with CQL: {query}")
-            pages = confluence.search(query, limit=limit, spaces_filter=spaces_filter)
+            pages = confluence_fetcher.search(
+                query, limit=limit, spaces_filter=spaces_filter
+            )
     else:
-        pages = confluence.search(query, limit=limit, spaces_filter=spaces_filter)
-
+        pages = confluence_fetcher.search(
+            query, limit=limit, spaces_filter=spaces_filter
+        )
     search_results = [page.to_simplified_dict() for page in pages]
     return json.dumps(search_results, indent=2, ensure_ascii=False)
 
@@ -171,12 +174,8 @@ async def get_page(
     Returns:
         JSON string representing the page content and/or metadata, or an error if not found or parameters are invalid.
     """
-    lifespan_ctx = ctx.request_context.lifespan_context
-    if not lifespan_ctx or not lifespan_ctx.confluence:
-        raise ValueError("Confluence client is not configured or available.")
-    confluence = lifespan_ctx.confluence
-
-    page_object = None  # Expects ConfluencePage | None
+    confluence_fetcher = await get_confluence_fetcher(ctx)
+    page_object = None
 
     if page_id:
         if title or space_key:
@@ -184,7 +183,7 @@ async def get_page(
                 "page_id was provided; title and space_key parameters will be ignored."
             )
         try:
-            page_object = confluence.get_page_content(
+            page_object = confluence_fetcher.get_page_content(
                 page_id, convert_to_markdown=convert_to_markdown
             )
         except Exception as e:
@@ -195,7 +194,7 @@ async def get_page(
                 ensure_ascii=False,
             )
     elif title and space_key:
-        page_object = confluence.get_page_by_title(
+        page_object = confluence_fetcher.get_page_by_title(
             space_key, title, convert_to_markdown=convert_to_markdown
         )
         if not page_object:
@@ -221,7 +220,7 @@ async def get_page(
     if include_metadata:
         result = {"metadata": page_object.to_simplified_dict()}
     else:
-        result = {"content": page_object.content}
+        result = {"content": {"value": page_object.content}}
 
     return json.dumps(result, indent=2, ensure_ascii=False)
 
@@ -284,16 +283,12 @@ async def get_page_children(
     Returns:
         JSON string representing a list of child page objects.
     """
-    lifespan_ctx = ctx.request_context.lifespan_context
-    if not lifespan_ctx or not lifespan_ctx.confluence:
-        raise ValueError("Confluence client is not configured or available.")
-    confluence = lifespan_ctx.confluence
-
+    confluence_fetcher = await get_confluence_fetcher(ctx)
     if include_content and "body" not in expand:
         expand = f"{expand},body.storage" if expand else "body.storage"
 
     try:
-        pages = confluence.get_page_children(
+        pages = confluence_fetcher.get_page_children(
             page_id=parent_id,
             start=start,
             limit=limit,
@@ -341,12 +336,8 @@ async def get_comments(
     Returns:
         JSON string representing a list of comment objects.
     """
-    lifespan_ctx = ctx.request_context.lifespan_context
-    if not lifespan_ctx or not lifespan_ctx.confluence:
-        raise ValueError("Confluence client is not configured or available.")
-    confluence = lifespan_ctx.confluence
-
-    comments = confluence.get_page_comments(page_id)
+    confluence_fetcher = await get_confluence_fetcher(ctx)
+    comments = confluence_fetcher.get_page_comments(page_id)
     formatted_comments = [comment.to_simplified_dict() for comment in comments]
     return json.dumps(formatted_comments, indent=2, ensure_ascii=False)
 
@@ -374,12 +365,8 @@ async def get_labels(
     Returns:
         JSON string representing a list of label objects.
     """
-    lifespan_ctx = ctx.request_context.lifespan_context
-    if not lifespan_ctx or not lifespan_ctx.confluence:
-        raise ValueError("Confluence client is not configured or available.")
-    confluence = lifespan_ctx.confluence
-
-    labels = confluence.get_page_labels(page_id)
+    confluence_fetcher = await get_confluence_fetcher(ctx)
+    labels = confluence_fetcher.get_page_labels(page_id)
     formatted_labels = [label.to_simplified_dict() for label in labels]
     return json.dumps(formatted_labels, indent=2, ensure_ascii=False)
 
@@ -403,15 +390,21 @@ async def add_label(
     Raises:
         ValueError: If in read-only mode or Confluence client is unavailable.
     """
-    lifespan_ctx = ctx.request_context.lifespan_context
-    if lifespan_ctx.read_only:
+    confluence_fetcher = await get_confluence_fetcher(ctx)
+    lifespan_ctx_dict = ctx.request_context.lifespan_context
+    app_lifespan_ctx = (
+        lifespan_ctx_dict.get("app_lifespan_context")
+        if isinstance(lifespan_ctx_dict, dict)
+        else None
+    )
+    logger.debug(
+        f"add_label: app_lifespan_ctx.read_only = {app_lifespan_ctx.read_only if app_lifespan_ctx else 'N/A (app_lifespan_ctx is None)'}"
+    )
+    if app_lifespan_ctx is not None and app_lifespan_ctx.read_only:
         logger.warning("Attempted to call add_label in read-only mode.")
         raise ValueError("Cannot add label in read-only mode.")
-    if not lifespan_ctx or not lifespan_ctx.confluence:
-        raise ValueError("Confluence client is not configured or available.")
-    confluence = lifespan_ctx.confluence
 
-    labels = confluence.add_page_label(page_id, name)
+    labels = confluence_fetcher.add_page_label(page_id, name)
     formatted_labels = [label.to_simplified_dict() for label in labels]
     return json.dumps(formatted_labels, indent=2, ensure_ascii=False)
 
@@ -456,15 +449,21 @@ async def create_page(
     Raises:
         ValueError: If in read-only mode or Confluence client is unavailable.
     """
-    lifespan_ctx = ctx.request_context.lifespan_context
-    if lifespan_ctx.read_only:
+    confluence_fetcher = await get_confluence_fetcher(ctx)
+    lifespan_ctx_dict = ctx.request_context.lifespan_context
+    app_lifespan_ctx = (
+        lifespan_ctx_dict.get("app_lifespan_context")
+        if isinstance(lifespan_ctx_dict, dict)
+        else None
+    )
+    logger.debug(
+        f"create_page: app_lifespan_ctx.read_only = {app_lifespan_ctx.read_only if app_lifespan_ctx else 'N/A (app_lifespan_ctx is None)'}"
+    )
+    if app_lifespan_ctx is not None and app_lifespan_ctx.read_only:
         logger.warning("Attempted to call create_page in read-only mode.")
         raise ValueError("Cannot create page in read-only mode.")
-    if not lifespan_ctx or not lifespan_ctx.confluence:
-        raise ValueError("Confluence client is not configured or available.")
-    confluence = lifespan_ctx.confluence
 
-    page = confluence.create_page(
+    page = confluence_fetcher.create_page(
         space_key=space_key,
         title=title,
         body=content,
@@ -479,6 +478,7 @@ async def create_page(
     )
 
 
+@convert_empty_defaults_to_none
 @confluence_mcp.tool(tags={"confluence", "write"})
 async def update_page(
     ctx: Context,
@@ -513,20 +513,26 @@ async def update_page(
         JSON string representing the updated page object.
 
     Raises:
-        ValueError: If in read-only mode or Confluence client is unavailable.
+        ValueError: If Confluence client is not configured or available.
     """
-    lifespan_ctx = ctx.request_context.lifespan_context
-    if lifespan_ctx.read_only:
+    confluence_fetcher = await get_confluence_fetcher(ctx)
+    lifespan_ctx_dict = ctx.request_context.lifespan_context
+    app_lifespan_ctx = (
+        lifespan_ctx_dict.get("app_lifespan_context")
+        if isinstance(lifespan_ctx_dict, dict)
+        else None
+    )
+    logger.debug(
+        f"update_page: app_lifespan_ctx.read_only = {app_lifespan_ctx.read_only if app_lifespan_ctx else 'N/A (app_lifespan_ctx is None)'}"
+    )
+    if app_lifespan_ctx is not None and app_lifespan_ctx.read_only:
         logger.warning("Attempted to call update_page in read-only mode.")
         raise ValueError("Cannot update page in read-only mode.")
-    if not lifespan_ctx or not lifespan_ctx.confluence:
-        raise ValueError("Confluence client is not configured or available.")
-    confluence = lifespan_ctx.confluence
 
     # TODO: revert this once Cursor IDE handles optional parameters with Union types correctly.
     actual_parent_id = parent_id if parent_id else None
 
-    updated_page = confluence.update_page(
+    updated_page = confluence_fetcher.update_page(
         page_id=page_id,
         title=title,
         body=content,
@@ -558,18 +564,24 @@ async def delete_page(
         JSON string indicating success or failure.
 
     Raises:
-        ValueError: If in read-only mode or Confluence client is unavailable.
+        ValueError: If Confluence client is not configured or available.
     """
-    lifespan_ctx = ctx.request_context.lifespan_context
-    if lifespan_ctx.read_only:
+    confluence_fetcher = await get_confluence_fetcher(ctx)
+    lifespan_ctx_dict = ctx.request_context.lifespan_context
+    app_lifespan_ctx = (
+        lifespan_ctx_dict.get("app_lifespan_context")
+        if isinstance(lifespan_ctx_dict, dict)
+        else None
+    )
+    logger.debug(
+        f"delete_page: app_lifespan_ctx.read_only = {app_lifespan_ctx.read_only if app_lifespan_ctx else 'N/A (app_lifespan_ctx is None)'}"
+    )
+    if app_lifespan_ctx is not None and app_lifespan_ctx.read_only:
         logger.warning("Attempted to call delete_page in read-only mode.")
         raise ValueError("Cannot delete page in read-only mode.")
-    if not lifespan_ctx or not lifespan_ctx.confluence:
-        raise ValueError("Confluence client is not configured or available.")
-    confluence = lifespan_ctx.confluence
 
     try:
-        result = confluence.delete_page(page_id=page_id)
+        result = confluence_fetcher.delete_page(page_id=page_id)
         if result:
             response = {
                 "success": True,
@@ -614,16 +626,19 @@ async def add_comment(
     Raises:
         ValueError: If in read-only mode or Confluence client is unavailable.
     """
-    lifespan_ctx = ctx.request_context.lifespan_context
-    if lifespan_ctx.read_only:
+    confluence_fetcher = await get_confluence_fetcher(ctx)
+    lifespan_ctx_dict = ctx.request_context.lifespan_context
+    app_lifespan_ctx = (
+        lifespan_ctx_dict.get("app_lifespan_context")
+        if isinstance(lifespan_ctx_dict, dict)
+        else None
+    )
+    if app_lifespan_ctx is not None and app_lifespan_ctx.read_only:
         logger.warning("Attempted to call add_comment in read-only mode.")
         raise ValueError("Cannot add comment in read-only mode.")
-    if not lifespan_ctx or not lifespan_ctx.confluence:
-        raise ValueError("Confluence client is not configured or available.")
-    confluence = lifespan_ctx.confluence
 
     try:
-        comment = confluence.add_comment(page_id=page_id, content=content)
+        comment = confluence_fetcher.add_comment(page_id=page_id, content=content)
         if comment:
             comment_data = comment.to_simplified_dict()
             response = {

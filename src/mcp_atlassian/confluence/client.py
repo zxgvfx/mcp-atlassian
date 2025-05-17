@@ -2,13 +2,12 @@
 
 import logging
 import os
-from typing import Any
 
 from atlassian import Confluence
 from requests import Session
 
 from ..exceptions import MCPAtlassianAuthenticationError
-from ..utils.logging import log_config_param
+from ..utils.logging import log_config_param, mask_sensitive
 from ..utils.oauth import configure_oauth_session
 from ..utils.ssl import configure_ssl_verification
 from .config import ConfluenceConfig
@@ -50,6 +49,9 @@ class ConfluenceClient:
             # The Confluence API URL with OAuth is different
             api_url = f"https://api.atlassian.com/ex/confluence/{self.config.oauth_config.cloud_id}"
 
+            logger.debug(
+                f"Initializing Confluence client with OAuth. API URL: {api_url}, Session Headers (before API init): {session.headers}"
+            )
             # Initialize Confluence with the session
             self.confluence = Confluence(
                 url=api_url,
@@ -57,7 +59,13 @@ class ConfluenceClient:
                 cloud=True,  # OAuth is only for Cloud
                 verify_ssl=self.config.ssl_verify,
             )
+            logger.debug(
+                f"Confluence client _session after init: {self.confluence._session.__dict__}"
+            )
         elif self.config.auth_type == "token":
+            logger.debug(
+                f"Initializing Confluence client with Token (PAT) auth. URL: {self.config.url}, Token (masked): {mask_sensitive(str(self.config.personal_token))}"
+            )
             self.confluence = Confluence(
                 url=self.config.url,
                 token=self.config.personal_token,
@@ -65,6 +73,9 @@ class ConfluenceClient:
                 verify_ssl=self.config.ssl_verify,
             )
         else:  # basic auth
+            logger.debug(
+                f"Initializing Confluence client with Basic auth. URL: {self.config.url}, Username: {self.config.username}"
+            )
             self.confluence = Confluence(
                 url=self.config.url,
                 username=self.config.username,
@@ -105,47 +116,6 @@ class ConfluenceClient:
         self.preprocessor = ConfluencePreprocessor(
             base_url=self.config.url, confluence_client=self.confluence
         )
-
-    def get_user_details_by_accountid(
-        self, account_id: str, expand: str = None
-    ) -> dict[str, Any]:
-        """Get user details by account ID.
-
-        Args:
-            account_id: The account ID of the user
-            expand: OPTIONAL expand for get status of user.
-                Possible param is "status". Results are "Active, Deactivated"
-
-        Returns:
-            User details as a dictionary
-
-        Raises:
-            Various exceptions from the Atlassian API if user doesn't exist or
-            if there are permission issues
-        """
-        return self.confluence.get_user_details_by_accountid(account_id, expand)
-
-    def get_user_details_by_username(
-        self, username: str, expand: str = None
-    ) -> dict[str, Any]:
-        """Get user details by username.
-
-        This is typically used for Confluence Server/DC instances where username
-        might be used as an identifier.
-
-        Args:
-            username: The username of the user
-            expand: OPTIONAL expand for get status of user.
-                Possible param is "status". Results are "Active, Deactivated"
-
-        Returns:
-            User details as a dictionary
-
-        Raises:
-            Various exceptions from the Atlassian API if user doesn't exist or
-            if there are permission issues
-        """
-        return self.confluence.get_user_details_by_username(username, expand)
 
     def _process_html_content(
         self, html_content: str, space_key: str
