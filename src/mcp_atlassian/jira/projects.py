@@ -3,13 +3,15 @@
 import logging
 from typing import Any
 
-from ..models import JiraIssue, JiraProject, JiraSearchResult
+from ..models import JiraProject
+from ..models.jira.search import JiraSearchResult
 from .client import JiraClient
+from .protocols import SearchOperationsProto
 
 logger = logging.getLogger("mcp-jira")
 
 
-class ProjectsMixin(JiraClient):
+class ProjectsMixin(JiraClient, SearchOperationsProto):
     """Mixin for Jira project operations.
 
     This mixin provides methods for retrieving and working with Jira projects,
@@ -50,6 +52,10 @@ class ProjectsMixin(JiraClient):
         """
         try:
             project_data = self.jira.project(project_key)
+            if not isinstance(project_data, dict):
+                msg = f"Unexpected return value type from `jira.project`: {type(project_data)}"
+                logger.error(msg)
+                raise TypeError(msg)
             return project_data
         except Exception as e:
             logger.warning(f"Error getting project {project_key}: {e}")
@@ -187,6 +193,10 @@ class ProjectsMixin(JiraClient):
             scheme = self.jira.get_project_permission_scheme(
                 project_id_or_key=project_key
             )
+            if not isinstance(scheme, dict):
+                msg = f"Unexpected return value type from `jira.get_project_permission_scheme`: {type(scheme)}"
+                logger.error(msg)
+                raise TypeError(msg)
             return scheme
 
         except Exception as e:
@@ -211,6 +221,10 @@ class ProjectsMixin(JiraClient):
             scheme = self.jira.get_project_notification_scheme(
                 project_id_or_key=project_key
             )
+            if not isinstance(scheme, dict):
+                msg = f"Unexpected return value type from `jira.get_project_notification_scheme`: {type(scheme)}"
+                logger.error(msg)
+                raise TypeError(msg)
             return scheme
 
         except Exception as e:
@@ -231,6 +245,10 @@ class ProjectsMixin(JiraClient):
         """
         try:
             meta = self.jira.issue_createmeta(project=project_key)
+            if not isinstance(meta, dict):
+                msg = f"Unexpected return value type from `jira.issue_createmeta`: {type(meta)}"
+                logger.error(msg)
+                raise TypeError(msg)
 
             issue_types = []
             # Extract issue types from createmeta response
@@ -260,7 +278,11 @@ class ProjectsMixin(JiraClient):
         try:
             # Use JQL to count issues in the project
             jql = f"project = {project_key}"
-            result = self.jira.jql(jql=jql, fields=["key"], limit=1)
+            result = self.jira.jql(jql=jql, fields="key", limit=1)
+            if not isinstance(result, dict):
+                msg = f"Unexpected return value type from `jira.jql`: {type(result)}"
+                logger.error(msg)
+                raise TypeError(msg)
 
             # Extract total from the response
             total = 0
@@ -277,7 +299,7 @@ class ProjectsMixin(JiraClient):
 
     def get_project_issues(
         self, project_key: str, start: int = 0, limit: int = 50
-    ) -> list[JiraIssue]:
+    ) -> JiraSearchResult:
         """
         Get issues for a specific project.
 
@@ -293,25 +315,11 @@ class ProjectsMixin(JiraClient):
             # Use JQL to get issues in the project
             jql = f"project = {project_key}"
 
-            # Use search_issues if available (delegate to SearchMixin)
-            if hasattr(self, "search_issues") and callable(self.search_issues):
-                # This assumes search_issues returns JiraIssue objects already
-                return self.search_issues(jql, start=start, limit=limit)
-
-            # Fallback implementation if search_issues is not available
-            result = self.jira.jql(jql=jql, fields="*all", start=start, limit=limit)
-
-            issues = []
-            if isinstance(result, dict) and "issues" in result:
-                # Create a JiraSearchResult and extract the issues
-                search_result = JiraSearchResult.from_api_response(result)
-                issues = search_result.issues
-
-            return issues
+            return self.search_issues(jql, start=start, limit=limit)
 
         except Exception as e:
             logger.error(f"Error getting issues for project {project_key}: {str(e)}")
-            return []
+            return JiraSearchResult(issues=[], total=0)
 
     def get_project_keys(self) -> list[str]:
         """
@@ -322,7 +330,15 @@ class ProjectsMixin(JiraClient):
         """
         try:
             projects = self.get_all_projects()
-            return [project.get("key") for project in projects if "key" in project]
+            project_keys: list[str] = []
+            for project in projects:
+                key = project.get("key")
+                if not isinstance(key, str):
+                    msg = f"Unexpected return value type from `get_all_projects`: {type(key)}"
+                    logger.error(msg)
+                    raise TypeError(msg)
+                project_keys.append(key)
+            return project_keys
 
         except Exception as e:
             logger.error(f"Error getting project keys: {str(e)}")

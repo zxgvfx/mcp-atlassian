@@ -9,16 +9,18 @@ simplified dictionaries for API responses.
 # Re-export models for easier imports
 from .base import ApiModel, TimestampMixin
 
-# Confluence models
+# Confluence models (Import from the new structure)
 from .confluence import (
+    ConfluenceAttachment,
     ConfluenceComment,
+    ConfluenceLabel,
     ConfluencePage,
     ConfluenceSearchResult,
     ConfluenceSpace,
     ConfluenceUser,
     ConfluenceVersion,
 )
-from .constants import (
+from .constants import (  # noqa: F401 - Keep constants available
     CONFLUENCE_DEFAULT_ID,
     CONFLUENCE_DEFAULT_SPACE,
     CONFLUENCE_DEFAULT_VERSION,
@@ -35,16 +37,21 @@ from .constants import (
     UNKNOWN,
 )
 
-# Jira models
+# Jira models (Keep existing imports)
 from .jira import (
+    JiraAttachment,
+    JiraBoard,
     JiraComment,
     JiraIssue,
     JiraIssueType,
     JiraPriority,
     JiraProject,
+    JiraResolution,
     JiraSearchResult,
+    JiraSprint,
     JiraStatus,
     JiraStatusCategory,
+    JiraTimetracking,
     JiraTransition,
     JiraUser,
     JiraWorklog,
@@ -80,14 +87,21 @@ __all__ = [
     "JiraComment",
     "JiraIssue",
     "JiraProject",
+    "JiraResolution",
     "JiraTransition",
     "JiraWorklog",
     "JiraSearchResult",
+    "JiraAttachment",
+    "JiraTimetracking",
+    "JiraBoard",
+    "JiraSprint",
     # Confluence models
     "ConfluenceUser",
     "ConfluenceSpace",
     "ConfluencePage",
     "ConfluenceComment",
+    "ConfluenceLabel",
     "ConfluenceVersion",
     "ConfluenceSearchResult",
+    "ConfluenceAttachment",
 ]

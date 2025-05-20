@@ -146,7 +146,12 @@ MOCK_PAGE_RESPONSE = {
     },
     "body": {
         "storage": {
-            "value": '<h2><ac:emoticon ac:name="blue-star" />&nbsp;Date</h2><p><time datetime="2024-01-01" /></p><h2><ac:emoticon ac:name="blue-star" />&nbsp;Participants</h2><ul><li><p><ac:link><ri:user ri:account-id="user123" /></ac:link></p></li></ul><h2><ac:emoticon ac:name="blue-star" />&nbsp;Goals</h2><ul><li><p>Example goal</p></li></ul>',
+            "value": '<h2><ac:emoticon ac:name="blue-star" />&nbsp;Date</h2><p><time datetime="2024-01-01" /></p><h2><ac:emoticon ac:name="blue-star" />&nbsp;Participants</h2><ul><li><p><ac:link><ri:user ri:account-id="user123" /></ac:link></p></li></ul><h2><ac:emoticon ac:name="blue-star" />&nbsp;Goals</h2><ul><li><p>Example goal</p></li></ul>'
+            '<p><ac:structured-macro ac:name="profile">'
+            '<ac:parameter ac:name="user">'
+            '<ri:user ri:account-id="user123" />'
+            "</ac:parameter>"
+            "</ac:structured-macro></p>",
             "representation": "storage",
             "embeddedContent": [],
             "_expandable": {"content": "/rest/api/content/987654321"},
@@ -282,6 +287,35 @@ MOCK_COMMENTS_RESPONSE = {
         }
     ]
 }
+
+MOCK_LABELS_RESPONSE = {
+    "results": [
+        {
+            "id": "456789123",
+            "prefix": "global",
+            "name": "meeting-notes",
+            "label": "meeting-notes",
+        },
+        {
+            "id": "456789124",
+            "prefix": "my",
+            "name": "important",
+        },
+        {
+            "id": "456789125",
+            "name": "test",
+        },
+    ],
+    "start": 0,
+    "limit": 200,
+    "size": 3,
+    "_links": {
+        "self": "https://company.atlassian.net/wiki/rest/api/content/456789123",
+        "base": "https://company.atlassian.net",
+        "context": "",
+    },
+}
+
 MOCK_SPACES_RESPONSE = {
     "results": [
         {

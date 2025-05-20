@@ -2,6 +2,231 @@
 
 ## [Unreleased]
 
+## [0.11.1] - 2025-05-20
+
+### Fixed
+- **Jira & Confluence Read-Only Mode:** Resolved an `AttributeError` in Jira write tools and standardized read-only mode checks across all Jira and Confluence write-enabled tools. Introduced a `@check_write_access` decorator to correctly use the application context for these checks, ensuring consistent behavior. (Fixes #434, PR #438)
+
+## [0.11.0] - 2025-05-18
+
+### Added
+- **Multi-User Authentication for HTTP Transports:** Implemented comprehensive multi-user authentication for `streamable-http` and `sse` transports. Users can now authenticate per-request using OAuth 2.0 Bearer tokens (Cloud) or Personal Access Tokens (PATs for Server/DC or Cloud API tokens). This enables operations under individual user permissions, enhancing security and context-awareness. (#416, #341)
+- **Confluence `add_comment` Tool:** Introduced a new tool `confluence_add_comment` to allow programmatic addition of comments to Confluence pages. (#424, #276)
+- **Enhanced Confluence Page Lookup:** The `confluence_get_page` tool now supports fetching pages by `title` and `space_key` in addition to `page_id`, providing more flexibility when page IDs are unknown. (#430)
+
+### Fixed
+- **Confluence User Profile Macros:** Correctly processes Confluence User Profile Macros (`<ac:structured-macro ac:name="profile">`), resolving an issue where macros were misinterpreted, leading to garbled output or raw macro tags. This includes better user detail fetching for Server/DC instances. (#419)
+
+### Changed
+- **Authentication Context Management:** Refactored server context and dependency injection to support dynamic, user-specific `JiraFetcher` and `ConfluenceFetcher` instances based on per-request authentication.
+- **Dependencies:** Updated `fastmcp` and `mcp` to latest compatible versions. Added `cachetools` for potential future enhancements.
+
+### Documentation
+- Updated README with detailed instructions for setting up and using multi-user authentication with OAuth 2.0 and PATs, including IDE configuration examples.
+- Added the new `confluence_add_comment` tool to the tool table in README.md. (#431)
+
+## [0.10.6] - 2025-05-12
+
+### Fixed
+- Enhanced OAuth configuration detection to properly identify and prioritize OAuth 2.0 setup when all required variables are present, especially verifying ATLASSIAN_OAUTH_CLOUD_ID (#410)
+- Improved OAuth 2.0 authentication method selection logic in environment configuration handling (#412)
+
+### Documentation
+- Restored and enhanced OAuth 2.0 (3LO) setup guide in README.md with clear step-by-step instructions (#411, #414)
+- Added Docker-specific OAuth configuration examples, including token persistence via volume mounting (#413)
+- Reorganized authentication methods in .env.example for improved clarity and user understanding (#414)
+- Added expanded IDE integration examples for OAuth 2.0 configuration (#415)
+
+## [0.10.5] - 2025-05-10
+
+### Fixed
+- Enhanced compatibility with various MCP clients by improving optional parameter handling in Jira and Confluence tools (#389, #407)
+- Fixed type errors with FastMCP v2.3.1 by updating Context type hints (#408)
+
+### Changed
+- Updated dependencies to use FastMCP 2.3.x series
+
+## [0.10.4] - 2025-05-10
+
+### Added
+- New `jira_get_user_profile` tool to fetch user information using various identifiers (#396)
+- Added `offline_access` scope to OAuth configs to enable refresh tokens and prevent authentication failures (#381)
+
+### Fixed
+- Made optional string parameters in Confluence tools handle `None` values properly for better client compatibility (#389)
+- Fixed OAuth callback errors and improved logging for easier troubleshooting (#402)
+
+### Documentation
+- Temporarily removed OAuth setup instructions pending validation in Docker environments (#404)
+- Clarified Jira tool parameter descriptions, especially for the `assignee` field (#391, #395)
+- Added security guidance for client secret handling in OAuth setup (#381)
+
+## [0.10.3] - 2025-05-06
+
+### Added
+- **Proxy Support:** Added support for HTTP/S and SOCKS proxies. Configure globally using `HTTP_PROXY`, `HTTPS_PROXY`, `SOCKS_PROXY`, `NO_PROXY` environment variables, or use service-specific overrides like `JIRA_HTTPS_PROXY`, `CONFLUENCE_NO_PROXY`. (#260, #361)
+
+### Fixed
+- Fixed `Context is not available outside of a request` error occurring when running via `uvx` due to incompatibility with `fastmcp>=2.2.8`. Pinned `fastmcp` dependency to `<2.2.8` to ensure compatibility with the latest `mcp-atlassian` release when installed via `uvx`. (#383)
+
+## [0.10.2] - 2025-05-06
+
+### Fixed
+- SSE server now binds to "0.0.0.0" for broader network access.
+
+## [0.10.1] - 2025-05-05
+
+### Fixed
+- Re-added the `/healthz` endpoint for Kubernetes health probes, which was accidentally removed during the FastMCP v2 migration (#371). This restores the fix for #359.
+
+## [0.10.0] - 2025-05-05
+
+### Added
+-   **OAuth 2.0 Authentication:** Added support for OAuth 2.0 (3LO) for Jira and Confluence Cloud, including an interactive `--oauth-setup` wizard for easier configuration. Uses `keyring` for secure token storage. (Fixes #238)
+-   **Health Check Endpoint:** Introduced a `/healthz` endpoint for Kubernetes readiness/liveness probes when using the SSE transport mode. (Fixes #359)
+
+### Changed
+-   **Server Framework:** Migrated the core server implementation from the legacy `mcp` library to the modern `fastmcp>=2.2.5` framework. This includes a new server structure under `src/mcp_atlassian/servers/` and centralized context management. (Fixes #371)
+-   **Jira Cloud Search Limit:** Updated Jira Cloud search to use `enhanced_jql_get_list_of_tickets`, allowing retrieval of more than the previous 50-issue limit per request. (Fixes #369)
+-   **Docker:** Optimized Docker image build process for smaller size (using Alpine base images) and improved security (running as non-root user).
+
+### Fixed
+-   **Jira Cloud Search Count:** Corrected the `total` count reported in `jira_search` results for Jira Cloud instances, which was previously limited by the pagination size. (Refs #333)
+
+### Removed
+-   **Tools:** Removed the `jira_get_epic_issues` and `confluence_get_page_ancestors` tools. Their functionality can be achieved using the respective `search` tools with appropriate JQL/CQL queries. (Fixes #372)
+
+### Internal
+-   **Configuration:** Consolidated `ruff` and `mypy` configurations into `pyproject.toml`, removing legacy config files.
+
+### Documentation
+-   Simplified setup and usage instructions in the README, adding guidance for the new OAuth setup command (`uvx mcp-atlassian --oauth-setup`).
+
+## [0.9.0] - 2025-05-01
+
+### Added
+- Added tool filtering capability via `--enabled-tools` flag and `ENABLED_TOOLS` environment variable (#354)
+- Added Confluence page labels support with new tools: `confluence_get_labels` and `confluence_add_label` (#328)
+- Added `jira_batch_get_changelogs` tool and pagination helper for efficiently fetching issue changelog data (#346)
+
+### Changed
+- Improved on-premise Confluence URL handling based on whether the instance is Cloud or Server/Data Center (#350)
+- Refactored Jira code to improve quality and reduce technical debt, including better type safety and code organization (#345)
+- Adopted centralized field formatting with new `_format_field_value_for_write` mechanism for Jira issue field handling (#357)
+
+### Fixed
+- Fixed labels not being correctly applied during Jira issue creation with improved field handling (#357)
+- Fixed Jira Cloud searches by using `enhanced_jql` for Cloud and fixing startAt TypeErrors in pagination (#356)
+
+## [0.8.4] - 2025-04-26
+
+### Added
+- Added `jira_create_sprint` tool for programmatically creating Jira sprints
+- Added `get_issue_link_types()` method to retrieve all available issue link types
+- Added corresponding MCP tool interfaces for link operations
+
+### Changed
+- Refactored `create_issue_link(data)` method to create links between issues
+- Refactored `remove_issue_link(link_id)` method to remove existing links
+- Updated project dependencies with `python-dateutil` and `types-python-dateutil`
+
+### Fixed
+- Fixed SSL verification environment variables being overwritten in Docker (#340)
+- Corrected jira_update_issue example for assignee format (#339)
+
+## [0.8.3] - 2025-04-24
+
+### Removed
+- Removed Resources functionality to resolve excessive startup API requests (#303)
+
+## [0.8.2] - 2025-04-23
+
+### Fixed
+- Reverted the FastMCP v2 migration (commits `b434c1d`, `db5e7de`) to resolve critical errors introduced in v0.8.1, including issues with `jira_create_issue`, `get_issue`, `get_board_issues`, and `get_sprints_from_board`. This restores stability while the refactoring issues are investigated further. (Fixes #314, #315, #316, #318, #319)
+
+## [0.8.1] - 2025-04-23
+
+### Fixed
+- Fixed Jira search pagination parameter mismatch by correctly passing 'start' instead of 'start_at' parameter
+- Fixed Jira search result handling by updating issue extraction logic
+
+## [0.8.0] - 2025-04-22
+
+### Added
+- Added `jira_update_sprint`
+- Added `jira_search_fields` tool for fuzzy searching Jira fields
+
+### Changed
+- Migrated server architecture to FastMCP v2
+- Enabled setting transport mode (stdio/sse) via TRANSPORT env var
+- Added support for setting port number via PORT env var when using SSE transport
+- Implemented proper precedence: CLI arguments > environment variables > defaults
+- Enhanced startup with detailed connection feedback and sensitive data masking
+- Added optional parent_id parameter for Confluence page updates
+
+### Fixed
+- Fixed Jira Server/Data Center assignee field handling by prioritizing user name over key
+- Fixed issue with `jira_get_issue` and comments handling
+- Fixed duplicate functions and improved typing in Jira mixins
+
+### Other
+- Added Docker installation as primary method in README
+- Added version-specific tags for container images on ghcr.io
+- Added .dockerignore and updated Dockerfile for improved build process
+
+## [0.7.1] - 2025-04-18
+
+### Fixed
+- Fixed batch issue creation payload structure in `batch_create_issues` to correctly pass list directly to Jira API without double-wrapping in `issueUpdates` (#273).
+- Fixed `jira_get_issue` tool to include comments when comment_limit>0 by correcting field name check from "comments" to "comment" in JiraIssue.to_simplified_dict() (#281, #275).
+- Fixed AttributeError in `jira_get_epic_issues` tool when processing results (#280, #277).
+
+## [0.7.0] - 2025-04-17
+
+### Removed (Breaking Change)
+- Removed `confluence_attach_content` tool due to usability and technical limitations, particularly with image uploads (#255, #242)
+
+### Added
+- Added Jira issue linking capabilities:
+    - New tool `jira_create_issue_link` to create links between issues.
+    - New tool `jira_remove_issue_link` to remove existing issue links.
+    - Implemented underlying `LinksMixin` for link operations (#266).
+- Added `jira_batch_create_issues` tool for creating multiple Jira issues efficiently via Jira's bulk API (#244).
+    - Implemented underlying `batch_create_issues` method in `jira.IssuesMixin`.
+- Added standard GitHub templates for Issues (Bug Report, Feature Request) and Pull Requests (#263, #265).
+
+### Changed
+- Enhanced `confluence_search` tool to use `siteSearch` by default for simple terms (improving relevance) with automatic fallback to `text` search for compatibility (#270).
+- Added pagination support (via `startAt` parameter) to the `jira_get_epic_issues` tool (#271, #268).
+
+### Docs
+- Significantly improved README clarity, structure, examples, and configuration instructions (#256).
+- Fixed minor typo in documentation (#258).
+
+### Fixed
+- (Internal fix related to pagination parameter handling in `get_epic_issues` logic, exposed via `jira_get_epic_issues` tool change) (#271, #268).
+- Fixed type ignore comments to resolve CI mypy errors (#271).
+
+## [0.6.5] - 2025-04-13
+
+### Added
+- Added content type inference for Confluence attachments (#252, #242)
+
+### Changed
+- Refactored Confluence models into modular directory structure (#251)
+- Refactored Jira pydantic models into dedicated package for improved organization (#249)
+- Added support for missing standard Jira fields in JiraIssue model (#250, #230)
+
+### Fixed
+- Fixed Jira Data Center/Server assignee lookup during issue creation (#248)
+- Fixed handling of fixVersions in additional_fields (#247, #241)
+
+## [0.6.4] - 2025-04-09
+
+### Fixed
+- Improved type restriction for `JiraIssue.requested_fields` and corrected `jira_search` argument description (#227, #226)
+- Resolved Windsurf parsing error (#228)
+
 ## [0.6.3] - 2025-04-07
 
 ### Added

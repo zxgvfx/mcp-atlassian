@@ -3,8 +3,7 @@
 import logging
 
 import requests
-from atlassian.errors import ApiError
-from requests.exceptions import HTTPError, RequestException
+from requests.exceptions import HTTPError
 
 from ..exceptions import MCPAtlassianAuthenticationError
 from ..models.confluence import ConfluencePage
@@ -55,6 +54,7 @@ class PagesMixin(ConfluenceClient):
                 # Override content with our processed version
                 content_override=page_content,
                 content_format="storage" if not convert_to_markdown else "markdown",
+                is_cloud=self.config.is_cloud,
             )
         except HTTPError as http_err:
             if http_err.response is not None and http_err.response.status_code in [
@@ -179,6 +179,7 @@ class PagesMixin(ConfluenceClient):
                 # Override content with our processed version
                 content_override=page_content,
                 content_format="storage" if not convert_to_markdown else "markdown",
+                is_cloud=self.config.is_cloud,
             )
 
         except KeyError as e:
@@ -246,6 +247,7 @@ class PagesMixin(ConfluenceClient):
                 # Override content with our processed version
                 content_override=page_content,
                 content_format="storage" if not convert_to_markdown else "markdown",
+                is_cloud=self.config.is_cloud,
             )
 
             page_models.append(page_model)
@@ -317,6 +319,7 @@ class PagesMixin(ConfluenceClient):
         is_minor_edit: bool = False,
         version_comment: str = "",
         is_markdown: bool = True,
+        parent_id: str | None = None,
     ) -> ConfluencePage:
         """
         Update an existing page in Confluence.
@@ -328,6 +331,7 @@ class PagesMixin(ConfluenceClient):
             is_minor_edit: Whether this is a minor edit (keyword-only)
             version_comment: Optional comment for this version (keyword-only)
             is_markdown: Whether the body content is in markdown format (default: True, keyword-only)
+            parent_id: Optional new parent page ID (keyword-only)
 
         Returns:
             ConfluencePage model containing the updated page's data
@@ -343,21 +347,22 @@ class PagesMixin(ConfluenceClient):
                 else body
             )
 
-            # We'll let the underlying Confluence API handle this operation completely
-            # as it has internal logic for versioning and updating
             logger.debug(f"Updating page {page_id} with title '{title}'")
 
-            # Simply pass through all parameters, making sure to match parameter names
-            response = self.confluence.update_page(
-                page_id=page_id,
-                title=title,
-                body=storage_body,
-                type="page",
-                representation="storage",
-                minor_edit=is_minor_edit,  # This matches the parameter name in the API
-                version_comment=version_comment,
-                always_update=True,  # Force update to avoid content comparison issues
-            )
+            update_kwargs = {
+                "page_id": page_id,
+                "title": title,
+                "body": storage_body,
+                "type": "page",
+                "representation": "storage",
+                "minor_edit": is_minor_edit,
+                "version_comment": version_comment,
+                "always_update": True,
+            }
+            if parent_id:
+                update_kwargs["parent_id"] = parent_id
+
+            response = self.confluence.update_page(**update_kwargs)
 
             # After update, refresh the page data
             return self.get_page_content(page_id)
@@ -479,38 +484,3 @@ class PagesMixin(ConfluenceClient):
         except Exception as e:
             logger.error(f"Error deleting page {page_id}: {str(e)}")
             raise Exception(f"Failed to delete page {page_id}: {str(e)}") from e
-
-    def attach_content(
-        self, content: bytes, name: str, page_id: str
-    ) -> ConfluencePage | None:
-        """
-        Attach content to a Confluence page.
-
-        Args:
-            content: The content to attach (bytes)
-            name: The name of the attachment
-            page_id: The ID of the page to attach the content to
-
-        Returns:
-            ConfluencePage model containing the updated page's data
-        """
-        try:
-            logger.debug("Attaching content %s to page %s", name, page_id)
-            self.confluence.attach_content(content=content, name=name, page_id=page_id)
-        except ApiError as e:
-            logger.error(
-                "Confluence API Error when trying to attach content %s to page %s: %s",
-                name,
-                page_id,
-                str(e),
-            )
-            raise
-        except RequestException as e:
-            logger.error(
-                "Network error when trying to attach content %s to page %s: %s",
-                name,
-                page_id,
-                str(e),
-            )
-            raise
-        return self.get_page_content(page_id=page_id, convert_to_markdown=False)
